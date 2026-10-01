@@ -97,7 +97,7 @@ window.Calc = (function () {
 
     // base stats (assumptions)
     add('Base', [
-      { s: main, v: mech.mainStatPerLevel * L },
+      { s: main, v: mech.baseMainStat + mech.mainStatPerLevel * L },
       { s: 'max-health', v: mech.baseHealth + mech.healthPerLevel * (L - 1) },
       { s: 'max-mana', v: mech.baseMana },
       { s: 'mana-regen', v: mech.baseManaRegen },
@@ -579,7 +579,7 @@ window.Calc = (function () {
       const taken = (1 - base) * (1 - typeDR) * less;
       types[el] = { typeDR, mitig: 1 - taken, ehp: st.maxHealth / Math.max(1e-9, taken) };
     }
-    const critDR = clamp(E.sum('critical-damage-reduction-pct', null, st) + st.dex * mech.critDrPerDex, 0, cap);
+    const critDR = clamp(E.sum('critical-damage-reduction-pct', null, st) + mech.baseCritDR + st.dex * mech.critDrPerDex, 0, cap);
     // In-game "Toughness": life / (1 - average of armor and magic resist reduction) / (1 - dodge). Matches the character sheet.
     const toughness = st.maxHealth / (1 - (armorDR + mrDR) / 2) / Math.max(0.01, 1 - st.dodge);
     const critMulti = Math.max(1, 1 + (mech.enemyCritMulti - 1) * (1 - critDR));
