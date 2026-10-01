@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deskrawl Planner</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Deskrawl <span>Planner</span></div>
+  <label>Class <select id="cls"></select></label>
+  <label>Level <input id="level" type="number" min="1" max="70"></label>
+  <input id="bname" class="bname" placeholder="Build name">
+  <div class="spacer"></div>
+  <button id="btn-new" title="Start a new build">New</button>
+  <button id="btn-save" title="Save in this browser">Save</button>
+  <select id="saved" title="Load a saved build"><option value="">Load…</option></select>
+  <button id="btn-share" title="Copy a link to this build">Share link</button>
+  <button id="btn-import" title="Import a build code or an AFK Meta build link">Import</button>
+  <button id="btn-export" title="Copy the build code / AFK Meta link">Export</button>
+</header>
+<div class="layout">
+  <aside id="side"></aside>
+  <main>
+    <nav id="tabs"></nav>
+    <section id="view"></section>
+  </main>
+</div>
+<div id="tip" class="tip" hidden></div>
+<dialog id="dlg"><form method="dialog"><h3 id="dlg-title"></h3><div id="dlg-body"></div><menu><button id="dlg-ok" value="ok">OK</button><button value="cancel">Close</button></menu></form></dialog>
+<script src="data/deskrawl-data.js"></script>
+<script src="js/mechanics.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
