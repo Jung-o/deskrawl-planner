@@ -417,7 +417,7 @@
       const it = build.gear[s.id];
       const t = itemTitle(it, s);
       const ic = it && it.item ? D.items[it.item].icon : s.icon;
-      const cmp = build.compare[s.id] ? ' <span class="badge guess">compare</span>' : '';
+      const cmp = build.compare[s.kind] ? ' <span class="badge guess">compare</span>' : '';
       html += `<div class="slot ${s.id === selSlot ? 'on' : ''}" data-slot="${s.id}">${icon(ic)}<div><div class="s">${esc(s.name)}${cmp}</div><div class="t r-${t.rar}">${esc(t.name)}${it && it.q ? ' <span class="muted">· ilvl ' + it.q + '</span>' : ''}${it && it.anc ? ' <span class="r-divine">· Ancient</span>' : ''}</div></div></div>`;
     }
     html += `<button id="it-lvl" style="margin-top:6px">Set every item level to hero level</button></div>
@@ -429,14 +429,14 @@
     // equipped item
     itemEditor($('#ied'), s, 'Equipped', build.gear[s.id], it => { if (it) build.gear[s.id] = it; else delete build.gear[s.id]; update({ keepView: true }); viewItems(); });
     // candidate item to compare
-    if (build.compare[s.id]) {
-      itemEditor($('#ced'), s, 'Candidate', build.compare[s.id], it => { if (it) build.compare[s.id] = it; else delete build.compare[s.id]; store.set(LS_CUR, build); viewItems(); }, true);
+    if (build.compare[s.kind]) {
+      itemEditor($('#ced'), s, 'Candidate', build.compare[s.kind], it => { if (it) build.compare[s.kind] = it; else delete build.compare[s.kind]; store.set(LS_CUR, build); viewItems(); }, true);
       renderCompare(s);
     } else {
       $('#ced').innerHTML = `<div class="card"><h2>Compare an item</h2><p class="muted">Build a temporary item for the ${esc(s.name)} slot and see every stat change against what you have equipped. It does not change your build until you equip it.</p>
         <p><button id="cmp-new" class="primary">New candidate item</button> <button id="cmp-copy">Start from the equipped item</button></p></div>`;
-      $('#cmp-new').onclick = () => { build.compare[s.id] = emptyItem(); viewItems(); };
-      $('#cmp-copy').onclick = () => { build.compare[s.id] = JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())); viewItems(); };
+      $('#cmp-new').onclick = () => { build.compare[s.kind] = emptyItem(); viewItems(); };
+      $('#cmp-copy').onclick = () => { build.compare[s.kind] = JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())); viewItems(); };
     }
   }
   const emptyItem = () => ({ item: null, rar: null, q: null, anc: false, imp: {}, aff: [], gems: [] });
@@ -506,7 +506,11 @@
       }
     } else html += '</div>';
     html += '<p>';
-    if (isCandidate) html += `<button data-k="equip" class="primary">Equip this item</button> <button data-k="copy">Copy equipped item</button> <button data-k="drop">Stop comparing</button>`;
+    if (isCandidate) {
+      const targets = sameKindSlots(s);
+      html += targets.map(t => `<button data-k="equip" data-slot="${t.id}" class="primary">${targets.length > 1 ? 'Equip in ' + esc(t.name) : 'Equip this item'}</button>`).join(' ')
+        + ` <button data-k="copy">Copy equipped item</button> <button data-k="drop">Stop comparing</button>`;
+    }
     else if (rar) html += `<button data-k="clear">Remove item</button>`;
     html += '</p></div>';
     box.innerHTML = html;
@@ -542,13 +546,15 @@
     const clr = q('[data-k=clear]'); if (clr) clr.onclick = () => onSave(null);
     const eqb = q('[data-k=equip]');
     if (eqb) {
-      eqb.onclick = () => {
-        const old = build.gear[s.id];
-        if (it.item || it.rar) build.gear[s.id] = it; else delete build.gear[s.id];
+      box.querySelectorAll('[data-k=equip]').forEach(btn => (btn.onclick = () => {
+        const slot = btn.dataset.slot;
+        const old = build.gear[slot];
+        if (it.item || it.rar) build.gear[slot] = it; else delete build.gear[slot];
         // keep the previously equipped item as the candidate, so you can switch back
-        if (old) build.compare[s.id] = old; else delete build.compare[s.id];
+        if (old) build.compare[s.kind] = old; else delete build.compare[s.kind];
+        selSlot = slot;
         update();
-      };
+      }));
       q('[data-k=copy]').onclick = () => onSave(JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())));
       q('[data-k=drop]').onclick = () => onSave(null);
     }
@@ -594,47 +600,60 @@
     return { rows, statRows };
   }
 
+  const sameKindSlots = s => D.slots.filter(x => x.kind === s.kind);
+
+  // Compare the candidate against what is equipped. For rings the candidate is tried in each ring slot.
   function renderCompare(s) {
-    const nb = JSON.parse(JSON.stringify(build));
-    const cand = build.compare[s.id];
-    if (cand && (cand.item || cand.rar)) nb.gear[s.id] = cand; else delete nb.gear[s.id];
-    const r2 = C.compute(normalize(nb));
-    const a = snapshot(result), b = snapshot(r2);
+    const cand = build.compare[s.kind];
+    const variants = sameKindSlots(s).map(t => {
+      const nb = JSON.parse(JSON.stringify(build));
+      if (cand && (cand.item || cand.rar)) nb.gear[t.id] = cand; else delete nb.gear[t.id];
+      const r = C.compute(normalize(nb));
+      const cur = itemTitle(build.gear[t.id], t);
+      return { slot: t, r, snap: snapshot(r), label: sameKindSlots(s).length > 1 ? 'Replace ' + t.name : 'Candidate', replaces: cur.name };
+    });
+    const a = snapshot(result);
     const fv = (v, f) => v == null ? '—' : f === 'p' ? pct(v, 1) : f === 'n2' ? fmt(v, 2) : f === 'n1' ? fmt(v, 1) : fmt(v);
-    const line = (label, v1, v2, f) => {
+    const cells = (v1, v2, f) => {
       const d = (v2 || 0) - (v1 || 0);
       const eps = f === 'p' ? 1e-5 : 0.05;
       const same = Math.abs(d) < eps;
       const rel = v1 ? d / Math.abs(v1) : null;
       const dtxt = same ? '' : (d > 0 ? '+' : '') + fv(d, f) + (rel != null && f !== 'p' && isFinite(rel) ? ` <span class="small">(${d > 0 ? '+' : ''}${fmt(rel * 100, 1)}%)</span>` : '');
-      return `<tr><td>${esc(label)}</td><td>${fv(v1, f)}</td><td>${fv(v2, f)}</td><td class="${same ? 'muted' : d > 0 ? 'good' : 'bad'}">${dtxt}</td></tr>`;
+      return `<td>${fv(v2, f)}</td><td class="${same ? 'muted' : d > 0 ? 'good' : 'bad'}">${dtxt}</td>`;
     };
-    const changed = (v1, v2) => Math.abs((v2 || 0) - (v1 || 0)) > 1e-6;
-    // align rows by label (abilities, procs and DoTs can differ between the two builds)
+    const changed = (v1, vs) => vs.some(v2 => Math.abs((v2 || 0) - (v1 || 0)) > 1e-6);
+    const cols = 2 + variants.length * 2;
+    // align rows by label (abilities, procs and DoTs can differ between builds)
     const labels = [];
-    for (const row of a.rows.concat(b.rows)) if (!labels.find(x => x[0] === row[0])) labels.push(row);
-    const dps1 = result.dmg.dpsSingle, dps2 = r2.dmg.dpsSingle, t1 = result.def.toughness, t2 = r2.def.toughness;
+    for (const row of a.rows.concat(...variants.map(v => v.snap.rows))) if (!labels.find(x => x[0] === row[0])) labels.push(row);
     const head = (n, v1, v2) => {
       const d = v2 - v1, p = v1 ? d / v1 * 100 : 0;
       return `<span class="cmp-big ${Math.abs(d) < 0.5 ? 'muted' : d > 0 ? 'good' : 'bad'}">${n} ${d >= 0 ? '+' : ''}${fmt(p, 1)}%</span>`;
     };
-    let html = `<div class="card" style="margin-top:12px"><h2>Equipped → candidate</h2>
-      <p>${head('DPS', dps1, dps2)} ${head('Toughness', t1, t2)} ${head('Physical EHP', result.def.types.physical.ehp, r2.def.types.physical.ehp)}</p>
-      <p><label><input type="checkbox" id="cmp-only" ${build.cmpOnly ? 'checked' : ''}> Only show what changes</label></p>
-      <table class="t cmp"><tr><th>Stat</th><th>Equipped</th><th>Candidate</th><th>Change</th></tr>`;
-    for (const row of labels) {
-      if (row.length === 1) { html += `<tr class="hdr"><td colspan="4">${esc(row[0])}</td></tr>`; continue; }
-      const v1 = (a.rows.find(x => x[0] === row[0]) || [])[1], v2 = (b.rows.find(x => x[0] === row[0]) || [])[1];
-      if (build.cmpOnly && !changed(v1, v2)) continue;
-      html += line(row[0], v1, v2, row[2]);
+    const best = variants.length > 1 ? variants.reduce((x, y) => (y.r.dmg.dpsSingle > x.r.dmg.dpsSingle ? y : x)) : null;
+    let html = `<div class="card" style="margin-top:12px"><h2>Equipped → candidate</h2>`;
+    for (const v of variants) {
+      html += `<p>${variants.length > 1 ? `<b>${esc(v.label)}</b> <span class="muted small">(${esc(v.replaces)})</span>${v === best && Math.abs(variants[0].r.dmg.dpsSingle - variants[1].r.dmg.dpsSingle) > 0.5 ? ' <span class="badge ok">best for DPS</span>' : ''}<br>` : ''}
+        ${head('DPS', result.dmg.dpsSingle, v.r.dmg.dpsSingle)} ${head('Toughness', result.def.toughness, v.r.def.toughness)} ${head('Physical EHP', result.def.types.physical.ehp, v.r.def.types.physical.ehp)}</p>`;
     }
-    html += '<tr class="hdr"><td colspan="4">All stat totals</td></tr>';
-    const keys = [...new Set(a.statRows.concat(b.statRows).map(x => x[3]))].sort();
-    for (const k of keys) {
-      const ra = a.statRows.find(x => x[3] === k), rb = b.statRows.find(x => x[3] === k);
-      const v1 = ra ? ra[1] : 0, v2 = rb ? rb[1] : 0;
-      if (build.cmpOnly && !changed(v1, v2)) continue;
-      html += line((ra || rb)[0], v1, v2, (ra || rb)[2]);
+    html += `<p><label><input type="checkbox" id="cmp-only" ${build.cmpOnly ? 'checked' : ''}> Only show what changes</label></p>
+      <table class="t cmp"><tr><th>Stat</th><th>Equipped</th>${variants.map(v => `<th>${esc(v.label)}</th><th>Change</th>`).join('')}</tr>`;
+    for (const row of labels) {
+      if (row.length === 1) { html += `<tr class="hdr"><td colspan="${cols}">${esc(row[0])}</td></tr>`; continue; }
+      const v1 = (a.rows.find(x => x[0] === row[0]) || [])[1];
+      const vs = variants.map(v => (v.snap.rows.find(x => x[0] === row[0]) || [])[1]);
+      if (build.cmpOnly && !changed(v1, vs)) continue;
+      html += `<tr><td>${esc(row[0])}</td><td>${fv(v1, row[2])}</td>${vs.map(v2 => cells(v1, v2, row[2])).join('')}</tr>`;
+    }
+    html += `<tr class="hdr"><td colspan="${cols}">All stat totals</td></tr>`;
+    const all = a.statRows.concat(...variants.map(v => v.snap.statRows));
+    for (const k of [...new Set(all.map(x => x[3]))].sort()) {
+      const ra = a.statRows.find(x => x[3] === k), any = all.find(x => x[3] === k);
+      const v1 = ra ? ra[1] : 0;
+      const vs = variants.map(v => { const rb = v.snap.statRows.find(x => x[3] === k); return rb ? rb[1] : 0; });
+      if (build.cmpOnly && !changed(v1, vs)) continue;
+      html += `<tr><td>${esc(any[0])}</td><td>${fv(v1, any[2])}</td>${vs.map(v2 => cells(v1, v2, any[2])).join('')}</tr>`;
     }
     html += '</table></div>';
     $('#cmp-res').innerHTML = html;
