@@ -417,26 +417,35 @@
       const it = build.gear[s.id];
       const t = itemTitle(it, s);
       const ic = it && it.item ? D.items[it.item].icon : s.icon;
-      const cmp = build.compare[s.id] ? ' <span class="badge guess">compare</span>' : '';
+      const cmp = build.compare[s.kind] ? ' <span class="badge guess">compare</span>' : '';
       html += `<div class="slot ${s.id === selSlot ? 'on' : ''}" data-slot="${s.id}">${icon(ic)}<div><div class="s">${esc(s.name)}${cmp}</div><div class="t r-${t.rar}">${esc(t.name)}${it && it.q ? ' <span class="muted">· ilvl ' + it.q + '</span>' : ''}${it && it.anc ? ' <span class="r-divine">· Ancient</span>' : ''}</div></div></div>`;
     }
     html += `<button id="it-lvl" style="margin-top:6px">Set every item level to hero level</button></div>
-      <div><div class="cmp-wrap"><div id="ied"></div><div id="ced"></div></div><div id="cmp-res"></div></div></div>`;
+      <div><div id="ocr-note"></div><div class="cmp-wrap"><div id="ied"></div><div id="ced"></div></div><div id="cmp-res"></div></div></div>`;
     $('#view').innerHTML = html;
-    $('#view').querySelector('.slotlist').onclick = e => { const n = e.target.closest('.slot'); if (n) { selSlot = n.dataset.slot; viewItems(); } };
+    $('#view').querySelector('.slotlist').onclick = e => { const n = e.target.closest('.slot'); if (n) { selSlot = n.dataset.slot; ocrTarget = null; lastOcr = null; viewItems(); } };
     $('#it-lvl').onclick = () => { Object.values(build.gear).forEach(it => it && it.q && (it.q = build.level)); update(); };
     const s = C.slotDef(selSlot);
+    const saveEquipped = it => { if (it) build.gear[s.id] = it; else delete build.gear[s.id]; update({ keepView: true }); viewItems(); };
+    const saveCandidate = it => { if (it) build.compare[s.kind] = it; else delete build.compare[s.kind]; store.set(LS_CUR, build); viewItems(); };
+    ocrTargets = { equipped: saveEquipped, candidate: saveCandidate, slot: s };
+    if (!ocrTarget) ocrTarget = build.compare[s.kind] ? 'candidate' : 'equipped';
     // equipped item
-    itemEditor($('#ied'), s, 'Equipped', build.gear[s.id], it => { if (it) build.gear[s.id] = it; else delete build.gear[s.id]; update({ keepView: true }); viewItems(); });
+    itemEditor($('#ied'), s, 'Equipped', build.gear[s.id], saveEquipped);
+    renderOcrNote();
     // candidate item to compare
-    if (build.compare[s.id]) {
-      itemEditor($('#ced'), s, 'Candidate', build.compare[s.id], it => { if (it) build.compare[s.id] = it; else delete build.compare[s.id]; store.set(LS_CUR, build); viewItems(); }, true);
+    if (build.compare[s.kind]) {
+      itemEditor($('#ced'), s, 'Candidate', build.compare[s.kind], saveCandidate, true);
       renderCompare(s);
     } else {
       $('#ced').innerHTML = `<div class="card"><h2>Compare an item</h2><p class="muted">Build a temporary item for the ${esc(s.name)} slot and see every stat change against what you have equipped. It does not change your build until you equip it.</p>
-        <p><button id="cmp-new" class="primary">New candidate item</button> <button id="cmp-copy">Start from the equipped item</button></p></div>`;
-      $('#cmp-new').onclick = () => { build.compare[s.id] = emptyItem(); viewItems(); };
-      $('#cmp-copy').onclick = () => { build.compare[s.id] = JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())); viewItems(); };
+        <p><button id="cmp-new" class="primary">New candidate item</button> <button id="cmp-copy">Start from the equipped item</button> <button id="cmp-ocr">📷 From a screenshot</button></p>
+        <p class="muted small">Or select this card and paste a tooltip screenshot (Ctrl+V), or drop the image file on it.</p></div>`;
+      $('#cmp-ocr').onclick = () => pickImage('candidate');
+      $('#ced').onmousedown = () => { ocrTarget = 'candidate'; };
+      dropZone($('#ced'), 'candidate');
+      $('#cmp-new').onclick = () => { build.compare[s.kind] = emptyItem(); viewItems(); };
+      $('#cmp-copy').onclick = () => { build.compare[s.kind] = JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())); viewItems(); };
     }
   }
   const emptyItem = () => ({ item: null, rar: null, q: null, anc: false, imp: {}, aff: [], gems: [] });
@@ -447,7 +456,9 @@
     it.imp = it.imp || {}; it.aff = it.aff || []; it.gems = it.gems || [];
     const named = Object.entries(D.items).filter(([, x]) => x.slot === s.kind);
     const rar = C.itemRarity(it);
-    let html = `<div class="card ${isCandidate ? 'cand' : ''}"><h2>${esc(title)} — ${esc(s.name)}</h2><div class="form">
+    const tgt = isCandidate ? 'candidate' : 'equipped';
+    let html = `<div class="card ${isCandidate ? 'cand' : ''} ${ocrTarget === tgt ? 'ocr-on' : ''}"><h2>${esc(title)} — ${esc(s.name)}
+      <button data-k="ocr" class="small" style="float:right" title="Read the item from a tooltip screenshot. You can also select this card and paste one with Ctrl+V, or drop an image file on it.">📷 Screenshot</button></h2><div class="form">
       <label>Item</label><select data-k="base"><option value="">— empty —</option>
         <optgroup label="Generic (pick the affixes)">${D.rolled.filter(() => s.imp.length + s.pri.length + s.sec.length).map(r => `<option value="r:${r}" ${!it.item && it.rar === r ? 'selected' : ''}>${esc(D.rarities.find(x => x.id === r).name)} ${esc(s.name)}</option>`).join('')}</optgroup>
         ${['divine', 'legendary', 'rare', 'uncommon', 'common'].map(r => {
@@ -506,12 +517,22 @@
       }
     } else html += '</div>';
     html += '<p>';
-    if (isCandidate) html += `<button data-k="equip" class="primary">Equip this item</button> <button data-k="copy">Copy equipped item</button> <button data-k="drop">Stop comparing</button>`;
+    if (isCandidate) {
+      const targets = sameKindSlots(s);
+      html += targets.map(t => `<button data-k="equip" data-slot="${t.id}" class="primary">${targets.length > 1 ? 'Equip in ' + esc(t.name) : 'Equip this item'}</button>`).join(' ')
+        + ` <button data-k="copy">Copy equipped item</button> <button data-k="drop">Stop comparing</button>`;
+    }
     else if (rar) html += `<button data-k="clear">Remove item</button>`;
     html += '</p></div>';
     box.innerHTML = html;
     const q = sel => box.querySelector(sel);
     const save = () => onSave(it);
+    q('[data-k=ocr]').onclick = () => pickImage(tgt);
+    box.onmousedown = () => {
+      ocrTarget = tgt;
+      document.querySelectorAll('#ied > .card, #ced > .card').forEach(c => c.classList.toggle('ocr-on', c.parentElement === box));
+    };
+    dropZone(box, tgt);
     q('[data-k=base]').onchange = e => {
       const v = e.target.value;
       if (!v) { onSave(isCandidate ? emptyItem() : null); return; }
@@ -542,16 +563,72 @@
     const clr = q('[data-k=clear]'); if (clr) clr.onclick = () => onSave(null);
     const eqb = q('[data-k=equip]');
     if (eqb) {
-      eqb.onclick = () => {
-        const old = build.gear[s.id];
-        if (it.item || it.rar) build.gear[s.id] = it; else delete build.gear[s.id];
+      box.querySelectorAll('[data-k=equip]').forEach(btn => (btn.onclick = () => {
+        const slot = btn.dataset.slot;
+        const old = build.gear[slot];
+        if (it.item || it.rar) build.gear[slot] = it; else delete build.gear[slot];
         // keep the previously equipped item as the candidate, so you can switch back
-        if (old) build.compare[s.id] = old; else delete build.compare[s.id];
+        if (old) build.compare[s.kind] = old; else delete build.compare[s.kind];
+        selSlot = slot;
         update();
-      };
+      }));
       q('[data-k=copy]').onclick = () => onSave(JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())));
       q('[data-k=drop]').onclick = () => onSave(null);
     }
+  }
+
+  // ------------------------------------------------------------------ screenshot OCR (tools/server.py)
+  let ocrTargets = null, ocrTarget = null, lastOcr = null;
+  function pickImage(tgt) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => inp.files[0] && runOcr(inp.files[0], tgt);
+    inp.click();
+  }
+  function dropZone(el, tgt) {
+    el.ondragover = e => { e.preventDefault(); el.classList.add('drop'); };
+    el.ondragleave = () => el.classList.remove('drop');
+    el.ondrop = e => {
+      e.preventDefault(); el.classList.remove('drop');
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) runOcr(f, tgt);
+    };
+  }
+  document.addEventListener('paste', e => {
+    if (tab !== 'items' || !ocrTargets) return;
+    const f = [...(e.clipboardData ? e.clipboardData.items : [])].find(x => x.type.startsWith('image/'));
+    if (!f) return;
+    e.preventDefault();
+    runOcr(f.getAsFile(), ocrTarget || 'equipped');
+  });
+  async function runOcr(file, tgt) {
+    const s = ocrTargets.slot;
+    toast('Reading the screenshot…');
+    let res;
+    try {
+      const r = await fetch(`/api/ocr?slot=${encodeURIComponent(s.id)}&level=${build.level}&cls=${build.cls}`, { method: 'POST', body: file });
+      if (!(r.headers.get('content-type') || '').includes('json')) throw new Error('no-server');
+      res = await r.json();
+    } catch (err) {
+      dialog('Screenshot reading is not running', `<p>Reading item screenshots needs the planner's Python server. Stop the current server and start the planner with:</p>
+        <pre>python tools/server.py</pre><p>then open <a href="http://localhost:8765">http://localhost:8765</a>. Install the OCR once with <code>pip install rapidocr-onnxruntime pillow</code>.</p>`);
+      return;
+    }
+    if (res.error) { dialog('Could not read the item', `<p>${esc(res.error)}</p>${(res.lines || []).length ? '<p class="muted small">Text found: ' + res.lines.map(esc).join(' · ') + '</p>' : ''}`); return; }
+    lastOcr = Object.assign({ tgt }, res);
+    ocrTarget = tgt;
+    (tgt === 'candidate' ? ocrTargets.candidate : ocrTargets.equipped)(res.item);
+  }
+  function renderOcrNote() {
+    const box = $('#ocr-note');
+    if (!box || !lastOcr) return;
+    const r = lastOcr;
+    box.innerHTML = `<div class="note"><b>Read from the screenshot into the ${r.tgt === 'candidate' ? 'candidate' : 'equipped'} item.</b> Check the values; you can fix anything in the editor.
+      ${r.warnings.map(w => `<div class="bad small">⚠ ${esc(w)}</div>`).join('')}
+      <details><summary class="small">What was recognized (${r.report.length} of ${r.lines.length} lines)</summary>
+      <table class="t small">${r.lines.map(l => { const m = r.report.find(x => x.line === l); return `<tr><td>${esc(l)}</td><td style="text-align:left">${m ? '→ ' + esc(m.as) : '<span class="muted">ignored</span>'}</td></tr>`; }).join('')}</table></details>
+      <button id="ocr-close" class="small">Hide</button></div>`;
+    $('#ocr-close').onclick = () => { lastOcr = null; box.innerHTML = ''; };
   }
 
   // Full stat comparison: equipped build vs. the same build with the candidate in this slot.
@@ -594,47 +671,60 @@
     return { rows, statRows };
   }
 
+  const sameKindSlots = s => D.slots.filter(x => x.kind === s.kind);
+
+  // Compare the candidate against what is equipped. For rings the candidate is tried in each ring slot.
   function renderCompare(s) {
-    const nb = JSON.parse(JSON.stringify(build));
-    const cand = build.compare[s.id];
-    if (cand && (cand.item || cand.rar)) nb.gear[s.id] = cand; else delete nb.gear[s.id];
-    const r2 = C.compute(normalize(nb));
-    const a = snapshot(result), b = snapshot(r2);
+    const cand = build.compare[s.kind];
+    const variants = sameKindSlots(s).map(t => {
+      const nb = JSON.parse(JSON.stringify(build));
+      if (cand && (cand.item || cand.rar)) nb.gear[t.id] = cand; else delete nb.gear[t.id];
+      const r = C.compute(normalize(nb));
+      const cur = itemTitle(build.gear[t.id], t);
+      return { slot: t, r, snap: snapshot(r), label: sameKindSlots(s).length > 1 ? 'Replace ' + t.name : 'Candidate', replaces: cur.name };
+    });
+    const a = snapshot(result);
     const fv = (v, f) => v == null ? '—' : f === 'p' ? pct(v, 1) : f === 'n2' ? fmt(v, 2) : f === 'n1' ? fmt(v, 1) : fmt(v);
-    const line = (label, v1, v2, f) => {
+    const cells = (v1, v2, f) => {
       const d = (v2 || 0) - (v1 || 0);
       const eps = f === 'p' ? 1e-5 : 0.05;
       const same = Math.abs(d) < eps;
       const rel = v1 ? d / Math.abs(v1) : null;
       const dtxt = same ? '' : (d > 0 ? '+' : '') + fv(d, f) + (rel != null && f !== 'p' && isFinite(rel) ? ` <span class="small">(${d > 0 ? '+' : ''}${fmt(rel * 100, 1)}%)</span>` : '');
-      return `<tr><td>${esc(label)}</td><td>${fv(v1, f)}</td><td>${fv(v2, f)}</td><td class="${same ? 'muted' : d > 0 ? 'good' : 'bad'}">${dtxt}</td></tr>`;
+      return `<td>${fv(v2, f)}</td><td class="${same ? 'muted' : d > 0 ? 'good' : 'bad'}">${dtxt}</td>`;
     };
-    const changed = (v1, v2) => Math.abs((v2 || 0) - (v1 || 0)) > 1e-6;
-    // align rows by label (abilities, procs and DoTs can differ between the two builds)
+    const changed = (v1, vs) => vs.some(v2 => Math.abs((v2 || 0) - (v1 || 0)) > 1e-6);
+    const cols = 2 + variants.length * 2;
+    // align rows by label (abilities, procs and DoTs can differ between builds)
     const labels = [];
-    for (const row of a.rows.concat(b.rows)) if (!labels.find(x => x[0] === row[0])) labels.push(row);
-    const dps1 = result.dmg.dpsSingle, dps2 = r2.dmg.dpsSingle, t1 = result.def.toughness, t2 = r2.def.toughness;
+    for (const row of a.rows.concat(...variants.map(v => v.snap.rows))) if (!labels.find(x => x[0] === row[0])) labels.push(row);
     const head = (n, v1, v2) => {
       const d = v2 - v1, p = v1 ? d / v1 * 100 : 0;
       return `<span class="cmp-big ${Math.abs(d) < 0.5 ? 'muted' : d > 0 ? 'good' : 'bad'}">${n} ${d >= 0 ? '+' : ''}${fmt(p, 1)}%</span>`;
     };
-    let html = `<div class="card" style="margin-top:12px"><h2>Equipped → candidate</h2>
-      <p>${head('DPS', dps1, dps2)} ${head('Toughness', t1, t2)} ${head('Physical EHP', result.def.types.physical.ehp, r2.def.types.physical.ehp)}</p>
-      <p><label><input type="checkbox" id="cmp-only" ${build.cmpOnly ? 'checked' : ''}> Only show what changes</label></p>
-      <table class="t cmp"><tr><th>Stat</th><th>Equipped</th><th>Candidate</th><th>Change</th></tr>`;
-    for (const row of labels) {
-      if (row.length === 1) { html += `<tr class="hdr"><td colspan="4">${esc(row[0])}</td></tr>`; continue; }
-      const v1 = (a.rows.find(x => x[0] === row[0]) || [])[1], v2 = (b.rows.find(x => x[0] === row[0]) || [])[1];
-      if (build.cmpOnly && !changed(v1, v2)) continue;
-      html += line(row[0], v1, v2, row[2]);
+    const best = variants.length > 1 ? variants.reduce((x, y) => (y.r.dmg.dpsSingle > x.r.dmg.dpsSingle ? y : x)) : null;
+    let html = `<div class="card" style="margin-top:12px"><h2>Equipped → candidate</h2>`;
+    for (const v of variants) {
+      html += `<p>${variants.length > 1 ? `<b>${esc(v.label)}</b> <span class="muted small">(${esc(v.replaces)})</span>${v === best && Math.abs(variants[0].r.dmg.dpsSingle - variants[1].r.dmg.dpsSingle) > 0.5 ? ' <span class="badge ok">best for DPS</span>' : ''}<br>` : ''}
+        ${head('DPS', result.dmg.dpsSingle, v.r.dmg.dpsSingle)} ${head('Toughness', result.def.toughness, v.r.def.toughness)} ${head('Physical EHP', result.def.types.physical.ehp, v.r.def.types.physical.ehp)}</p>`;
     }
-    html += '<tr class="hdr"><td colspan="4">All stat totals</td></tr>';
-    const keys = [...new Set(a.statRows.concat(b.statRows).map(x => x[3]))].sort();
-    for (const k of keys) {
-      const ra = a.statRows.find(x => x[3] === k), rb = b.statRows.find(x => x[3] === k);
-      const v1 = ra ? ra[1] : 0, v2 = rb ? rb[1] : 0;
-      if (build.cmpOnly && !changed(v1, v2)) continue;
-      html += line((ra || rb)[0], v1, v2, (ra || rb)[2]);
+    html += `<p><label><input type="checkbox" id="cmp-only" ${build.cmpOnly ? 'checked' : ''}> Only show what changes</label></p>
+      <table class="t cmp"><tr><th>Stat</th><th>Equipped</th>${variants.map(v => `<th>${esc(v.label)}</th><th>Change</th>`).join('')}</tr>`;
+    for (const row of labels) {
+      if (row.length === 1) { html += `<tr class="hdr"><td colspan="${cols}">${esc(row[0])}</td></tr>`; continue; }
+      const v1 = (a.rows.find(x => x[0] === row[0]) || [])[1];
+      const vs = variants.map(v => (v.snap.rows.find(x => x[0] === row[0]) || [])[1]);
+      if (build.cmpOnly && !changed(v1, vs)) continue;
+      html += `<tr><td>${esc(row[0])}</td><td>${fv(v1, row[2])}</td>${vs.map(v2 => cells(v1, v2, row[2])).join('')}</tr>`;
+    }
+    html += `<tr class="hdr"><td colspan="${cols}">All stat totals</td></tr>`;
+    const all = a.statRows.concat(...variants.map(v => v.snap.statRows));
+    for (const k of [...new Set(all.map(x => x[3]))].sort()) {
+      const ra = a.statRows.find(x => x[3] === k), any = all.find(x => x[3] === k);
+      const v1 = ra ? ra[1] : 0;
+      const vs = variants.map(v => { const rb = v.snap.statRows.find(x => x[3] === k); return rb ? rb[1] : 0; });
+      if (build.cmpOnly && !changed(v1, vs)) continue;
+      html += `<tr><td>${esc(any[0])}</td><td>${fv(v1, any[2])}</td>${vs.map(v2 => cells(v1, v2, any[2])).join('')}</tr>`;
     }
     html += '</table></div>';
     $('#cmp-res').innerHTML = html;

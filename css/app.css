@@ -124,3 +124,8 @@ table.cmp tr.hdr td { color: var(--accent); font-size: 11px; text-transform: upp
 .card select { max-width: 100%; }
 .affrow > * { min-width: 0; }
 .form select { width: 100%; }
+
+/* screenshot OCR */
+.card.ocr-on { box-shadow: 0 0 0 1px var(--accent) inset; }
+.drop > .card, .card.drop { outline: 2px dashed var(--accent); }
+pre { background: var(--panel2); padding: 6px 8px; border-radius: 4px; }
