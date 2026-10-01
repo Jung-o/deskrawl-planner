@@ -4,7 +4,7 @@
   const D = window.DESKRAWL, M = window.MECH, C = window.Calc;
   const ICON = 'https://afkmeta.com/assets/deskrawl/';
   const LS_CUR = 'dkp.current', LS_SAVES = 'dkp.saves', LS_TAB = 'dkp.tab';
-  const MECH_VERSION = 3; // bump when DEFAULT_MECH values change
+  const MECH_VERSION = 4; // bump when DEFAULT_MECH values change
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const fmt = (n, d = 0) => (n == null || !isFinite(n) ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }));
@@ -399,7 +399,11 @@
   const isPctStat = st => D.scale[st] === 1000;
   const toDisp = (st, raw) => raw == null ? '' : isPctStat(st) ? +(raw / 10).toFixed(1) : +(raw / D.scale[st]).toFixed(2);
   const fromDisp = (st, d) => Math.round(isPctStat(st) ? d * 10 : d * D.scale[st]);
-  const rangeTxt = (st, r) => r ? `${toDisp(st, r[0])} – ${toDisp(st, r[1])}${isPctStat(st) ? '%' : ''}` : 'not on this item';
+  const rangeTxt = (st, r, raw) => {
+    if (!r) return 'not on this item';
+    const txt = `${toDisp(st, r[0])} – ${toDisp(st, r[1])}${isPctStat(st) ? '%' : ''}`;
+    return raw != null && (raw < r[0] || raw > r[1]) ? `<span class="bad" title="Outside the roll range at this item level">${txt} ⚠</span>` : txt;
+  };
 
   function itemTitle(it, s) {
     if (!it || !(it.item || it.rar)) return { name: 'Empty', rar: '' };
@@ -455,7 +459,7 @@
       const rolls = C.rolls(it, s.id);
       if (rolls) {
         const band = D.bands[(it.q || 1) - 1];
-        html += `<label>Item level</label><span><input data-k="q" type="number" min="1" max="70" value="${it.q || ''}"> <span class="muted small">needs hero level ${band ? band[0] : '?'}</span></span>`;
+        html += `<label>Item level</label><span><input data-k="q" type="number" min="1" max="70" value="${it.q || ''}"> <span class="muted small">needs hero level ${band ? band[0] : '?'} · values are kept when you change it</span> <button data-k="maxall" class="small" title="Set every value to the best roll at this item level">Max all rolls</button></span>`;
         if (C.canAncient(rar, it.q)) html += `<label>Ancient</label><span><input data-k="anc" type="checkbox" ${it.anc ? 'checked' : ''}> <span class="muted small">higher rolls (level 70 legendary)</span></span>`;
       } else html += `<label></label><span class="muted small">This item has fixed stats in the game; only its effect is used here.</span>`;
       html += '</div>';
@@ -469,7 +473,7 @@
           for (const st of s.imp) {
             const r = C.range(st, rar, it.q, it.anc);
             const raw = it.imp[st] != null ? it.imp[st] : r && r[1];
-            html += `<div class="affrow"><span>${esc(affName(st))}</span><input type="number" step="any" data-imp="${st}" value="${toDisp(st, raw)}"><span class="rg">${rangeTxt(st, r)}</span><span></span></div>`;
+            html += `<div class="affrow"><span>${esc(affName(st))}</span><input type="number" step="any" data-imp="${st}" value="${toDisp(st, raw)}"><span class="rg">${rangeTxt(st, r, raw)}</span><span></span></div>`;
           }
         }
         const [nPri, nSec] = D.rarCount[rar];
@@ -480,7 +484,7 @@
           const r = C.range(a[0], rar, it.q, it.anc);
           const raw = a[1] == null ? r && r[1] : a[1];
           return `<div class="affrow"><select data-affs="${a[0]}">${(kind === 'p' ? pool(s.pri) : s.sec).map(st => `<option value="${st}" ${st === a[0] ? 'selected' : ''} ${st !== a[0] && used.has(st) ? 'disabled' : ''}>${esc(affName(st))}</option>`).join('')}</select>
-            <input type="number" step="any" data-affv="${a[0]}" value="${toDisp(a[0], raw)}"><span class="rg">${rangeTxt(a[0], r)}</span><button data-affdel="${a[0]}" title="Remove">✕</button></div>`;
+            <input type="number" step="any" data-affv="${a[0]}" value="${toDisp(a[0], raw)}"><span class="rg">${rangeTxt(a[0], r, raw)}</span><button data-affdel="${a[0]}" title="Remove">✕</button></div>`;
         };
         html += `<h3>Primary affixes (${pri.length}/${nPri})</h3>` + pri.map(a => affRow(a, 'p')).join('');
         if (pri.length < nPri) html += `<select data-affadd="p"><option value="">+ add a primary affix…</option>${pool(s.pri).filter(x => !used.has(x)).map(st => `<option value="${st}">${esc(affName(st))}</option>`).join('')}</select>`;
@@ -519,8 +523,16 @@
       it.aff = it.aff.filter(a => s.pri.includes(a[0])).slice(0, np).concat(it.aff.filter(a => s.sec.includes(a[0])).slice(0, ns));
       save();
     };
-    const qi = q('[data-k=q]'); if (qi) qi.onchange = e => { it.q = Math.max(1, Math.min(70, +e.target.value || 1)); if (!C.canAncient(C.itemRarity(it), it.q)) it.anc = false; it.imp = {}; it.aff = it.aff.map(a => [a[0], null]); save(); };
-    const anc = q('[data-k=anc]'); if (anc) anc.onchange = e => { it.anc = e.target.checked; it.imp = {}; it.aff = it.aff.map(a => [a[0], null]); save(); };
+    // Changing item level or Ancient keeps every value already on the item: values left at
+    // "max roll" are frozen at the current level's max first, so nothing has to be typed again.
+    const freeze = () => {
+      const r0 = C.itemRarity(it);
+      for (const st of s.imp) if (it.imp[st] == null) { const r = C.range(st, r0, it.q, it.anc); if (r) it.imp[st] = r[1]; }
+      it.aff = it.aff.map(a => { if (a[1] != null) return a; const r = C.range(a[0], r0, it.q, it.anc); return [a[0], r ? r[1] : null]; });
+    };
+    const qi = q('[data-k=q]'); if (qi) qi.onchange = e => { if (it.q) freeze(); it.q = Math.max(1, Math.min(70, +e.target.value || 1)); if (!C.canAncient(C.itemRarity(it), it.q)) it.anc = false; save(); };
+    const anc = q('[data-k=anc]'); if (anc) anc.onchange = e => { freeze(); it.anc = e.target.checked; save(); };
+    box.querySelectorAll('[data-k=maxall]').forEach(b => (b.onclick = () => { it.imp = {}; it.aff = it.aff.map(a => [a[0], null]); save(); }));
     box.querySelectorAll('[data-imp]').forEach(inp => (inp.onchange = e => { const st = e.target.dataset.imp; it.imp[st] = fromDisp(st, +e.target.value); save(); }));
     box.querySelectorAll('[data-affv]').forEach(inp => (inp.onchange = e => { const a = it.aff.find(x => x[0] === e.target.dataset.affv); a[1] = fromDisp(a[0], +e.target.value); save(); }));
     box.querySelectorAll('[data-affs]').forEach(sel => (sel.onchange = e => { const a = it.aff.find(x => x[0] === e.target.dataset.affs); a[0] = e.target.value; a[1] = null; save(); }));
