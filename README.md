@@ -4,13 +4,29 @@ A Path of Building–style build planner for **Deskrawl: Idle ARPG**. Plain HTML
 
 ## Run it
 
-The page loads its scripts from local files, so serve the folder instead of opening `index.html` directly:
-
 ```bash
-python -m http.server 8765
+python tools/server.py
 ```
 
-Then open http://localhost:8765.
+Then open http://localhost:8765. Ctrl+C stops it. If port 8765 is taken, pass another one: `python tools/server.py 8766`.
+
+The server also reads item screenshots (see below). Any static server works too (`python -m http.server 8765`), just without screenshots: pasting one then says "Screenshot reading is not running". Don't open `index.html` directly: it loads its scripts from local files.
+
+### Item screenshots (OCR)
+
+Install the OCR once:
+
+```bash
+pip install -r tools/requirements.txt
+```
+
+On the Items tab, take a screenshot of an item tooltip (Win+Shift+S) and press Ctrl+V, or use the 📷 button, or drop an image file on an editor. The item goes into the selected editor (Equipped or Candidate): base item, rarity, item level, affixes with their values, and gems. A note lists what each line was read as. If the tooltip doesn't show the item level, it's guessed from the values. Comma decimals (`42,8%`) are supported.
+
+The same reader works on the command line:
+
+```bash
+python tools/ocr_item.py tooltip.png --slot weapon --level 24
+```
 
 ## What it does
 
@@ -56,3 +72,4 @@ The hero's base stats are in the game files (`Player` component) but protected b
 - `js/calc.js`: stats, rotation, damage and defense engine
 - `js/mechanics.js`: assumptions, configuration, ability hit models, and the talent/legendary/set effect mappings
 - `tools/crawl.js`: data refresh
+- `tools/server.py`, `tools/ocr_item.py`: local server and item screenshot reader

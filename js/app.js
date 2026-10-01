@@ -421,20 +421,29 @@
       html += `<div class="slot ${s.id === selSlot ? 'on' : ''}" data-slot="${s.id}">${icon(ic)}<div><div class="s">${esc(s.name)}${cmp}</div><div class="t r-${t.rar}">${esc(t.name)}${it && it.q ? ' <span class="muted">· ilvl ' + it.q + '</span>' : ''}${it && it.anc ? ' <span class="r-divine">· Ancient</span>' : ''}</div></div></div>`;
     }
     html += `<button id="it-lvl" style="margin-top:6px">Set every item level to hero level</button></div>
-      <div><div class="cmp-wrap"><div id="ied"></div><div id="ced"></div></div><div id="cmp-res"></div></div></div>`;
+      <div><div id="ocr-note"></div><div class="cmp-wrap"><div id="ied"></div><div id="ced"></div></div><div id="cmp-res"></div></div></div>`;
     $('#view').innerHTML = html;
-    $('#view').querySelector('.slotlist').onclick = e => { const n = e.target.closest('.slot'); if (n) { selSlot = n.dataset.slot; viewItems(); } };
+    $('#view').querySelector('.slotlist').onclick = e => { const n = e.target.closest('.slot'); if (n) { selSlot = n.dataset.slot; ocrTarget = null; lastOcr = null; viewItems(); } };
     $('#it-lvl').onclick = () => { Object.values(build.gear).forEach(it => it && it.q && (it.q = build.level)); update(); };
     const s = C.slotDef(selSlot);
+    const saveEquipped = it => { if (it) build.gear[s.id] = it; else delete build.gear[s.id]; update({ keepView: true }); viewItems(); };
+    const saveCandidate = it => { if (it) build.compare[s.kind] = it; else delete build.compare[s.kind]; store.set(LS_CUR, build); viewItems(); };
+    ocrTargets = { equipped: saveEquipped, candidate: saveCandidate, slot: s };
+    if (!ocrTarget) ocrTarget = build.compare[s.kind] ? 'candidate' : 'equipped';
     // equipped item
-    itemEditor($('#ied'), s, 'Equipped', build.gear[s.id], it => { if (it) build.gear[s.id] = it; else delete build.gear[s.id]; update({ keepView: true }); viewItems(); });
+    itemEditor($('#ied'), s, 'Equipped', build.gear[s.id], saveEquipped);
+    renderOcrNote();
     // candidate item to compare
     if (build.compare[s.kind]) {
-      itemEditor($('#ced'), s, 'Candidate', build.compare[s.kind], it => { if (it) build.compare[s.kind] = it; else delete build.compare[s.kind]; store.set(LS_CUR, build); viewItems(); }, true);
+      itemEditor($('#ced'), s, 'Candidate', build.compare[s.kind], saveCandidate, true);
       renderCompare(s);
     } else {
       $('#ced').innerHTML = `<div class="card"><h2>Compare an item</h2><p class="muted">Build a temporary item for the ${esc(s.name)} slot and see every stat change against what you have equipped. It does not change your build until you equip it.</p>
-        <p><button id="cmp-new" class="primary">New candidate item</button> <button id="cmp-copy">Start from the equipped item</button></p></div>`;
+        <p><button id="cmp-new" class="primary">New candidate item</button> <button id="cmp-copy">Start from the equipped item</button> <button id="cmp-ocr">📷 From a screenshot</button></p>
+        <p class="muted small">Or select this card and paste a tooltip screenshot (Ctrl+V), or drop the image file on it.</p></div>`;
+      $('#cmp-ocr').onclick = () => pickImage('candidate');
+      $('#ced').onmousedown = () => { ocrTarget = 'candidate'; };
+      dropZone($('#ced'), 'candidate');
       $('#cmp-new').onclick = () => { build.compare[s.kind] = emptyItem(); viewItems(); };
       $('#cmp-copy').onclick = () => { build.compare[s.kind] = JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())); viewItems(); };
     }
@@ -447,7 +456,9 @@
     it.imp = it.imp || {}; it.aff = it.aff || []; it.gems = it.gems || [];
     const named = Object.entries(D.items).filter(([, x]) => x.slot === s.kind);
     const rar = C.itemRarity(it);
-    let html = `<div class="card ${isCandidate ? 'cand' : ''}"><h2>${esc(title)} — ${esc(s.name)}</h2><div class="form">
+    const tgt = isCandidate ? 'candidate' : 'equipped';
+    let html = `<div class="card ${isCandidate ? 'cand' : ''} ${ocrTarget === tgt ? 'ocr-on' : ''}"><h2>${esc(title)} — ${esc(s.name)}
+      <button data-k="ocr" class="small" style="float:right" title="Read the item from a tooltip screenshot. You can also select this card and paste one with Ctrl+V, or drop an image file on it.">📷 Screenshot</button></h2><div class="form">
       <label>Item</label><select data-k="base"><option value="">— empty —</option>
         <optgroup label="Generic (pick the affixes)">${D.rolled.filter(() => s.imp.length + s.pri.length + s.sec.length).map(r => `<option value="r:${r}" ${!it.item && it.rar === r ? 'selected' : ''}>${esc(D.rarities.find(x => x.id === r).name)} ${esc(s.name)}</option>`).join('')}</optgroup>
         ${['divine', 'legendary', 'rare', 'uncommon', 'common'].map(r => {
@@ -516,6 +527,12 @@
     box.innerHTML = html;
     const q = sel => box.querySelector(sel);
     const save = () => onSave(it);
+    q('[data-k=ocr]').onclick = () => pickImage(tgt);
+    box.onmousedown = () => {
+      ocrTarget = tgt;
+      document.querySelectorAll('#ied > .card, #ced > .card').forEach(c => c.classList.toggle('ocr-on', c.parentElement === box));
+    };
+    dropZone(box, tgt);
     q('[data-k=base]').onchange = e => {
       const v = e.target.value;
       if (!v) { onSave(isCandidate ? emptyItem() : null); return; }
@@ -558,6 +575,60 @@
       q('[data-k=copy]').onclick = () => onSave(JSON.parse(JSON.stringify(build.gear[s.id] || emptyItem())));
       q('[data-k=drop]').onclick = () => onSave(null);
     }
+  }
+
+  // ------------------------------------------------------------------ screenshot OCR (tools/server.py)
+  let ocrTargets = null, ocrTarget = null, lastOcr = null;
+  function pickImage(tgt) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => inp.files[0] && runOcr(inp.files[0], tgt);
+    inp.click();
+  }
+  function dropZone(el, tgt) {
+    el.ondragover = e => { e.preventDefault(); el.classList.add('drop'); };
+    el.ondragleave = () => el.classList.remove('drop');
+    el.ondrop = e => {
+      e.preventDefault(); el.classList.remove('drop');
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) runOcr(f, tgt);
+    };
+  }
+  document.addEventListener('paste', e => {
+    if (tab !== 'items' || !ocrTargets) return;
+    const f = [...(e.clipboardData ? e.clipboardData.items : [])].find(x => x.type.startsWith('image/'));
+    if (!f) return;
+    e.preventDefault();
+    runOcr(f.getAsFile(), ocrTarget || 'equipped');
+  });
+  async function runOcr(file, tgt) {
+    const s = ocrTargets.slot;
+    toast('Reading the screenshot…');
+    let res;
+    try {
+      const r = await fetch(`/api/ocr?slot=${encodeURIComponent(s.id)}&level=${build.level}&cls=${build.cls}`, { method: 'POST', body: file });
+      if (!(r.headers.get('content-type') || '').includes('json')) throw new Error('no-server');
+      res = await r.json();
+    } catch (err) {
+      dialog('Screenshot reading is not running', `<p>Reading item screenshots needs the planner's Python server. Stop the current server and start the planner with:</p>
+        <pre>python tools/server.py</pre><p>then open <a href="http://localhost:8765">http://localhost:8765</a>. Install the OCR once with <code>pip install rapidocr-onnxruntime pillow</code>.</p>`);
+      return;
+    }
+    if (res.error) { dialog('Could not read the item', `<p>${esc(res.error)}</p>${(res.lines || []).length ? '<p class="muted small">Text found: ' + res.lines.map(esc).join(' · ') + '</p>' : ''}`); return; }
+    lastOcr = Object.assign({ tgt }, res);
+    ocrTarget = tgt;
+    (tgt === 'candidate' ? ocrTargets.candidate : ocrTargets.equipped)(res.item);
+  }
+  function renderOcrNote() {
+    const box = $('#ocr-note');
+    if (!box || !lastOcr) return;
+    const r = lastOcr;
+    box.innerHTML = `<div class="note"><b>Read from the screenshot into the ${r.tgt === 'candidate' ? 'candidate' : 'equipped'} item.</b> Check the values; you can fix anything in the editor.
+      ${r.warnings.map(w => `<div class="bad small">⚠ ${esc(w)}</div>`).join('')}
+      <details><summary class="small">What was recognized (${r.report.length} of ${r.lines.length} lines)</summary>
+      <table class="t small">${r.lines.map(l => { const m = r.report.find(x => x.line === l); return `<tr><td>${esc(l)}</td><td style="text-align:left">${m ? '→ ' + esc(m.as) : '<span class="muted">ignored</span>'}</td></tr>`; }).join('')}</table></details>
+      <button id="ocr-close" class="small">Hide</button></div>`;
+    $('#ocr-close').onclick = () => { lastOcr = null; box.innerHTML = ''; };
   }
 
   // Full stat comparison: equipped build vs. the same build with the candidate in this slot.
