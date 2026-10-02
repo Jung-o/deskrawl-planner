@@ -30,7 +30,7 @@ python tools/ocr_item.py tooltip.png --slot weapon --level 24
 
 ## What it does
 
-- **Talents**: the full tree of each class with its row gates. Left-click adds a point, right-click removes one. Hovering a talent shows how one more point changes DPS and EHP.
+- **Talents**: the full tree of each class with its row gates. Left-click adds a point, right-click removes one. Hovering a talent shows how one more point changes DPS and Toughness.
 - **Skills**: the four ability slots and their levels. A table shows each ability's casts per second, damage per cast, DPS, and buff uptime.
 - **Items**: 12 slots. Pick a generic item of a rarity or a named base, set the item level and Ancient flag, add affixes (checked against the in-game ranges), and socket gems. Legendary and divine effects are in the calculations when the planner models them.
 - **Runes**: slots unlock with hero level. Rune levels 1–6 and set bonuses (2/4/6 pieces) are supported.
@@ -43,7 +43,7 @@ python tools/ocr_item.py tooltip.png --slot weapon --level 24
 ### Outputs
 
 - **Combined DPS**: specials are cast on cooldown, the strong attack whenever mana allows, and basic attacks fill the rest. Procs, legendary triggers and DoTs (bleed, poison, burn) are added on top.
-- **Effective hit pool**: the largest hit you survive per damage type, after armor or magic resist, typed reductions and "less damage taken". It's also shown counting dodge, and for a critical hit, along with how many hits you survive.
+- **Toughness**: the game's own survivability number, life ÷ (1 − average of armor and magic resist reduction) ÷ (1 − dodge), and how many hits of the configured size you survive. The Calcs tab also breaks down the largest hit you survive per damage type.
 
 ## Data sources
 

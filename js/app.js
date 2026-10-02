@@ -198,8 +198,6 @@
     $('#cls').value = build.cls; $('#level').value = build.level; $('#bname').value = build.name || '';
     const tp = C.talentProblems(build);
     const N = build.cfg.enemies;
-    const elRows = C.ELEMENTS.filter(e => e !== 'physical');
-    const minMagic = Math.min(...elRows.map(e => def.types[e].ehp));
     const dotDps = dmg.dots.reduce((a, d) => a + d.dps, 0);
     const lines = [];
     lines.push(`<div class="sum-sec"><h4>Offense</h4>
@@ -215,6 +213,8 @@
       <div class="row"><span>Mana in / spent per sec</span><b>${fmt(rot.manaIn, 1)} / ${fmt(rot.manaSpent, 1)}</b></div>
     </div>`);
     lines.push(`<div class="sum-sec"><h4>Defense</h4>
+      <div class="row" title="Same formula as the in-game Toughness: life / (1 - average of armor and magic resist reduction) / (1 - dodge)"><span>Toughness</span><b class="big">${fmt(def.toughness)}</b></div>
+      <div class="row" title="Toughness divided by the enemy hit set in Configuration"><span>Hits to die (${fmt(def.hit)} per hit)</span><b>${fmt(def.toughnessHits, 1)}</b></div>
       <div class="row"><span>Life</span><b>${fmt(st.maxHealth)}</b></div>
       <div class="row"><span>Mana</span><b>${fmt(st.maxMana)}</b></div>
       <div class="row"><span>Armor</span><b>${fmt(st.armor)} <span class="muted small">(${pct(def.armorDR)})</span></b></div>
@@ -222,15 +222,6 @@
       <div class="row"><span>Dodge</span><b>${pct(def.dodge)}</b></div>
       ${def.less < 1 ? `<div class="row"><span>Less damage taken</span><b>${pct(1 - def.less)}</b></div>` : ''}
       <div class="row"><span>Thorns</span><b>${fmt(st.thorns)}</b></div>
-    </div>`);
-    lines.push(`<div class="sum-sec"><h4>Effective hit pool</h4>
-      <div class="row" title="Same formula as the in-game Toughness on the character sheet"><span>Toughness (in-game)</span><b>${fmt(def.toughness)}</b></div>
-      <div class="row"><span>Physical hit</span><b class="big">${fmt(def.types.physical.ehp)}</b></div>
-      <div class="row"><span>Magic hit (weakest element)</span><b>${fmt(minMagic)}</b></div>
-      <div class="row"><span>Physical incl. dodge (avg)</span><b>${fmt(def.types.physical.ehp / Math.max(0.01, 1 - def.dodge))}</b></div>
-      <div class="row"><span>Physical crit hit</span><b>${fmt(def.types.physical.ehp / def.critMulti)}</b></div>
-      <div class="row"><span>Hits to die (${fmt(def.hit)} phys)</span><b>${fmt(def.hitsToDie.physical, 1)}</b></div>
-      <div class="row"><span>… counting dodge</span><b>${fmt(def.hitsToDie.physical / Math.max(0.01, 1 - def.dodge), 1)}</b></div>
       <div class="row"><span>Life recovery / sec</span><b>${fmt(def.recovery, 1)}</b></div>
       ${def.shields.map(s => `<div class="row small"><span>${esc(s.name)} shield (${pct(s.uptime, 0)} up)</span><b>${fmt(s.amount)}</b></div>`).join('')}
     </div>`);
@@ -285,10 +276,10 @@
   function deltaHtml(nb) {
     const r2 = C.compute(normalize(nb));
     const d1 = r2.dmg.dpsSingle - result.dmg.dpsSingle;
-    const d2 = r2.def.types.physical.ehp - result.def.types.physical.ehp;
-    const base1 = result.dmg.dpsSingle || 1, base2 = result.def.types.physical.ehp || 1;
+    const d2 = r2.def.toughness - result.def.toughness;
+    const base1 = result.dmg.dpsSingle || 1, base2 = result.def.toughness || 1;
     const f = (d, b) => `<span class="${d > 0.5 ? 'good' : d < -0.5 ? 'bad' : 'muted'}">${d >= 0 ? '+' : ''}${fmt(d)} (${d >= 0 ? '+' : ''}${fmt(d / b * 100, 1)}%)</span>`;
-    return `<div class="d small">DPS ${f(d1, base1)}<br>Physical EHP ${f(d2, base2)}</div>`;
+    return `<div class="d small">DPS ${f(d1, base1)}<br>Toughness ${f(d2, base2)}</div>`;
   }
 
   // ------------------------------------------------------------------ talents
@@ -651,9 +642,8 @@
       ['Magic resist', st.magicResist, 'n'], ['Magic resist reduction', def.mrDR, 'p'],
       ['Dodge', def.dodge, 'p'], ['Critical damage reduction', def.critDR, 'p'], ['Less damage taken', 1 - def.less, 'p'],
       ['Thorns', st.thorns, 'n'],
-      ['Toughness (in-game)', def.toughness, 'n'],
-      ...C.ELEMENTS.map(el => ['EHP vs ' + el, def.types[el].ehp, 'n']),
-      ['Hits to die (physical)', def.hitsToDie.physical, 'n1'],
+      ['Toughness', def.toughness, 'n'],
+      ['Hits to die', def.toughnessHits, 'n1'],
       ['Life recovery / sec', def.recovery, 'n1'],
       ['Life on hit', st.lifeOnHit, 'n'], ['Life on kill', st.lifeOnKill, 'n'], ['Life regeneration', st.lifeRegen, 'n'],
       ['Move speed', st.moveSpeed, 'p'],
@@ -706,7 +696,7 @@
     let html = `<div class="card" style="margin-top:12px"><h2>Equipped → candidate</h2>`;
     for (const v of variants) {
       html += `<p>${variants.length > 1 ? `<b>${esc(v.label)}</b> <span class="muted small">(${esc(v.replaces)})</span>${v === best && Math.abs(variants[0].r.dmg.dpsSingle - variants[1].r.dmg.dpsSingle) > 0.5 ? ' <span class="badge ok">best for DPS</span>' : ''}<br>` : ''}
-        ${head('DPS', result.dmg.dpsSingle, v.r.dmg.dpsSingle)} ${head('Toughness', result.def.toughness, v.r.def.toughness)} ${head('Physical EHP', result.def.types.physical.ehp, v.r.def.types.physical.ehp)}</p>`;
+        ${head('DPS', result.dmg.dpsSingle, v.r.dmg.dpsSingle)} ${head('Toughness', result.def.toughness, v.r.def.toughness)}</p>`;
     }
     html += `<p><label><input type="checkbox" id="cmp-only" ${build.cmpOnly ? 'checked' : ''}> Only show what changes</label></p>
       <table class="t cmp"><tr><th>Stat</th><th>Equipped</th>${variants.map(v => `<th>${esc(v.label)}</th><th>Change</th>`).join('')}</tr>`;
@@ -850,7 +840,9 @@
     }
     // defense
     const def = r.def;
-    html += `<h3>Defense</h3><table class="t"><tr><th>Damage type</th><th>Armor / resist</th><th>Typed reduction</th><th>Other</th><th>Total mitigation</th><th>Max hit (EHP)</th><th>Hits to die</th></tr>`;
+    html += `<h3>Defense</h3><p><b>Toughness ${fmt(def.toughness)}</b> = life ${fmt(r.st.maxHealth)} / (1 − average of armor ${pct(def.armorDR)} and magic resist ${pct(def.mrDR)} reduction) / (1 − dodge ${pct(def.dodge)}) — the in-game formula.
+      Hits to die: ${fmt(def.toughnessHits, 1)} at ${fmt(def.hit)} per hit.</p>
+      <p class="muted small">Per damage type, without dodge (typed reductions and "less damage taken" are not part of the game's Toughness):</p><table class="t"><tr><th>Damage type</th><th>Armor / resist</th><th>Typed reduction</th><th>Other</th><th>Total mitigation</th><th>Max hit (EHP)</th><th>Hits to die</th></tr>`;
     for (const el of C.ELEMENTS) {
       const t = def.types[el];
       html += `<tr><td>${el}</td><td>${pct(el === 'physical' ? def.armorDR : def.mrDR)}</td><td>${pct(t.typeDR)}</td><td>${pct(1 - def.less)}</td><td>${pct(t.mitig)}</td><td>${fmt(t.ehp)}</td><td>${fmt(def.hitsToDie[el], 1)}</td></tr>`;
@@ -924,7 +916,7 @@
       <ul>
         <li>Rotation: specials on cooldown, strong attack whenever mana allows, basic attack the rest of the time. Self-buffs (Rage Shout, Phantom Form, Flame Aura…) are averaged by uptime (see Configuration).</li>
         <li>Damage buckets are multiplied together (main stat, element, attack type, all damage, conditional, more, vulnerable, crit).</li>
-        <li>Effective hit pool = life ÷ (damage taken after armor or magic resist, typed reductions and "less damage taken"). Dodge is shown separately as an average.</li>
+        <li>Defense is summed up by Toughness, the game's own formula: life ÷ (1 − average of armor and magic resist reduction) ÷ (1 − dodge). The Calcs tab also shows the largest hit you survive per damage type.</li>
         <li>Values not published by the game (stat scaling, armor curve, base stats, poison/burn damage, some hit counts) are editable on the Assumptions tab and marked "assumption" next to the abilities.</li>
       </ul>
       <p class="muted small">Unofficial fan tool. Deskrawl: Idle ARPG © First Day Games. Icons load from AFK Meta.</p></div>`;

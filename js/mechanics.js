@@ -69,7 +69,7 @@ window.MECH = (function () {
       ['enemyStunned', 'check', false, 'Enemy is Stunned', ''],
       ['enemyDazed', 'check', false, 'Enemy is [Dazed]', ''],
       ['enemyFrozen', 'check', false, 'Enemy is [Frozen]', ''],
-      ['enemyHit', 'number', 1000, 'Enemy raw hit damage', 'One hit before your mitigation. Used for "hits to die".'],
+      ['enemyHit', 'number', 1000, 'Enemy raw hit damage', 'One hit before your mitigation. Hits to die = Toughness / this.'],
       ['electrostatic', 'number', 0, 'Electrostatic stacks on the enemy', 'Each stack: more Lightning damage taken (see Assumptions). Max 5 before Thundering consumes them.'],
       ['enemyAttackRate', 'number', 1, 'Enemy hits on you per second', 'Drives on-dodge effects (Mirror Steps, Zephyr’s Flow).'],
     ]],
@@ -156,6 +156,17 @@ window.MECH = (function () {
     'divine-thunder': { parts: [P('damage', 'lightning', { aoe: true, hits: 4 })], applies: ['Dazed'], guess: '4 pulses per cast (not published).' },
   };
 
+  // ---------------------------------------------------------------- talent values missing from the game data
+  // Filled in from in-game tooltips. Same shape as the data: per point, last entry = max points.
+  const perPoint = (n, step) => Array.from({ length: n }, (_, i) => +(step * (i + 1)).toFixed(4));
+  const TALENT_VALUES = {
+    'mirror-steps': { value: { f: 'pct', s: '', v: [0.6] }, duration: { f: 'number', s: 's', v: [4] } },
+    'sheltering-breath': { value: { f: 'pct', s: '', v: perPoint(5, 0.03) }, duration: { f: 'number', s: 's', v: perPoint(5, 3) } },
+    'iron-constitution': { reduction: { f: 'pct', s: '', v: [0.2] }, duration: { f: 'number', s: 's', v: [3] } },
+    'chain-force': { casts: { f: 'number', s: '', v: [7] } },
+    'gathered-force': { casts: { f: 'number', s: '', v: [3] } },
+  };
+
   // ---------------------------------------------------------------- talents
   // id -> (v) => mods. `v` holds every value of the talent at its current points.
   // Mod: { s: stat, v: value, ab?: [ability ids], tag?: ability tag, role?: basic|strong|special,
@@ -201,14 +212,14 @@ window.MECH = (function () {
     'sweeping-discipline': (v, t) => [{ s: 'ability-damage-pct', v: v.value, ab: t.hit }],
     'enhance-lightning-abilities-critical-hit-chance': (v, t) => [{ s: 'critical-hit-chance-pct', v: v.value, ab: t.hit }],
     'lightning-damage': v => [{ s: 'lightning-damage-pct', v: v.value }],
-    'chain-force': v => [{ s: 'more', v: v.value / 7, role: 'basic', label: 'Chain Force (1 in 7 casts)' }],
+    'chain-force': v => [{ s: 'more', v: v.value / v.casts, role: 'basic', label: `Chain Force (1 in ${v.casts} casts)` }],
     'enhance-threefold-strike-critical-damage': (v, t) => [{ s: 'critical-hit-damage-pct', v: v.value, ab: t.hit }],
     'exploit-weakness': v => [{ s: 'damage-vs-dazed-pct', v: v.value }],
     'enhance-piercing-lunge-damage': (v, t) => [{ s: 'ability-damage-pct', v: v.value, ab: t.hit }],
-    'gathered-force': v => [{ s: 'gathered', v: v.value, per: 3 }],
-    'sheltering-breath': (v, t, c, pts) => [{ s: 'damage-taken-less', v: 0.03 * pts, upCast: ['spirit-stream', 3 * pts] }],
-    'mirror-steps': () => [{ s: 'physical-damage-pct', v: 0.6, upDodge: 4 }],
-    'iron-constitution': () => [{ s: 'cheat-death', v: 0.2, dur: 3, cd: 30 }],
+    'gathered-force': v => [{ s: 'gathered', v: v.value, per: v.casts }],
+    'sheltering-breath': v => [{ s: 'damage-taken-less', v: v.value, upCast: ['spirit-stream', v.duration] }],
+    'mirror-steps': v => [{ s: 'physical-damage-pct', v: v.value, upDodge: v.duration }],
+    'iron-constitution': v => [{ s: 'cheat-death', v: v.reduction, dur: v.duration, cd: v.cooldown }],
     'enhance-sacred-orbs-speed': (v, t) => [{ s: 'hits-more', v: v.value, ab: ['sacred-orbs'] }],
     'zephyrs-flow': v => [{ s: 'mana-per-dodge', v: v.value }],
     'heavy-hands': (v, t) => [{ s: 'critical-hit-damage-pct', v: v.value, ab: t.hit }],
@@ -436,5 +447,10 @@ window.MECH = (function () {
     return { mods, bad };
   }
 
-  return { DEFAULT_MECH, CONFIG_DEFS, ABILITY_META, TALENT_FX: T, ITEM_FX, SET_FX, minionMods, parseCustom, textToStat };
+  // Merge the confirmed values into the talent data, so tooltips and calculations both see them.
+  for (const t of Object.values(window.DESKRAWL.talents).flat()) {
+    if (TALENT_VALUES[t.id]) t.vals = Object.assign({}, t.vals, TALENT_VALUES[t.id]);
+  }
+
+  return { DEFAULT_MECH, CONFIG_DEFS, ABILITY_META, TALENT_FX: T, TALENT_VALUES, ITEM_FX, SET_FX, minionMods, parseCustom, textToStat };
 })();

@@ -595,7 +595,7 @@ window.Calc = (function () {
       const v = abilityValues(rs.ab, rs.lvl);
       shields.push({ name: 'Rage Shield', amount: (v.shield || 0) * st.maxHealth, uptime: rot.uptime['rage-shield'] || 0 });
     }
-    return { L, armorDR, mrDR, toughness, less, types, critDR, critMulti, dodge, hit, recovery,
+    return { L, armorDR, mrDR, toughness, toughnessHits: toughness / hit, less, types, critDR, critMulti, dodge, hit, recovery,
       hitsToDie: Object.fromEntries(ELEMENTS.map(el => [el, types[el].ehp / hit])), shields };
   }
 
