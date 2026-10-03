@@ -60,8 +60,15 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(500, {"error": f"{type(e).__name__}: {e}"})
 
     def log_message(self, fmt, *args):
-        if "/api/" in (args[0] if args else ""):
-            sys.stderr.write("%s\n" % (fmt % args))
+        # Only log OCR calls; args can hold non-strings (e.g. an HTTPStatus from log_error).
+        msg = fmt % args
+        if "/api/" in msg:
+            sys.stderr.write(msg + "\n")
+
+    def log_error(self, fmt, *args):
+        # 404s for files like favicon.ico are normal; report other errors.
+        if args and str(args[0]) != "404" and getattr(args[0], "value", None) != 404:
+            sys.stderr.write((fmt % args) + "\n")
 
 
 def main():
