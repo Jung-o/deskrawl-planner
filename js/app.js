@@ -764,21 +764,48 @@
   }
 
   // ------------------------------------------------------------------ minion
+  const RARITY_ORDER = ['divine', 'legendary', 'rare', 'uncommon', 'common'];
+  const LS_MINF = 'dkp.minionFilter';
   function viewMinion() {
-    const cur = build.minion;
-    let html = `<h2>Active minion</h2><p class="muted">Its passive bonuses are added to your stats. Active abilities are listed for reference.</p><div class="cards">`;
-    html += `<div class="card ${!cur ? 'on' : ''}" data-mi="" style="cursor:pointer"><b>No minion</b></div>`;
-    for (const m of D.minions) {
-      const mods = M.minionMods(m);
-      html += `<div class="card" data-mi="${m.id}" style="cursor:pointer;${cur === m.id ? 'border-color:var(--accent)' : ''}"><div class="abil">${icon(m.icon)}<div>
-        <b class="r-${m.rarity}">${esc(m.name)}</b>${m.locked ? ' <span class="badge">locked</span>' : ''}
-        <div class="small">${m.passive.map(p => esc(p.desc.replace('{value}', p.vals.value ? fmtVal(p.vals.value.v[0], p.vals.value.f) : '?'))).join('<br>')}</div>
-        ${m.active.length ? `<div class="small muted">Active: ${m.active.map(esc).join(', ')}</div>` : ''}
-        ${m.passive.length && !mods.length ? '<span class="badge no">text only</span>' : ''}</div></div></div>`;
-    }
-    html += '</div>';
-    $('#view').innerHTML = html;
-    $('#view').querySelector('.cards').onclick = e => { const c = e.target.closest('[data-mi]'); if (c) { build.minion = c.dataset.mi || null; update(); } };
+    const f = Object.assign({ q: '', rar: [], sort: 'rarity' }, store.get(LS_MINF, {}));
+    const rarities = RARITY_ORDER.filter(r => D.minions.some(m => m.rarity === r));
+    const cur = build.minion && D.minions.find(m => m.id === build.minion);
+    $('#view').innerHTML = `<h2>Active minion</h2><p class="muted">Its passive bonuses are added to your stats. Active abilities are listed for reference.</p>
+      <div class="card" style="margin-bottom:10px">Equipped: ${cur ? `<b class="r-${cur.rarity}">${esc(cur.name)}</b> <button id="mi-none" class="small">Remove</button>` : '<span class="muted">no minion</span>'}</div>
+      <div class="filters"><input id="mi-q" type="search" placeholder="Search name, bonus or ability…" value="${esc(f.q)}">
+        ${rarities.map(r => `<label class="chip r-${r} ${f.rar.includes(r) ? 'on' : ''}"><input type="checkbox" data-rar="${r}" ${f.rar.includes(r) ? 'checked' : ''}>${esc(D.rarities.find(x => x.id === r).name)}</label>`).join('')}
+        <select id="mi-sort"><option value="rarity" ${f.sort === 'rarity' ? 'selected' : ''}>Sort: rarity</option><option value="name" ${f.sort === 'name' ? 'selected' : ''}>Sort: name</option></select>
+        <span id="mi-count" class="muted small"></span></div>
+      <div class="cards" id="mi-list"></div>`;
+    const list = () => {
+      const q = f.q.trim().toLowerCase();
+      const text = m => (m.name + ' ' + m.passive.map(p => p.name + ' ' + p.desc).join(' ') + ' ' + m.active.join(' ')).toLowerCase();
+      const shown = D.minions
+        .filter(m => !f.rar.length || f.rar.includes(m.rarity))
+        .filter(m => !q || q.split(/\s+/).every(w => text(m).includes(w)))
+        .sort((a, b) => (f.sort === 'rarity' ? RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity) : 0) || a.name.localeCompare(b.name));
+      $('#mi-count').textContent = `${shown.length} of ${D.minions.length}`;
+      $('#mi-list').innerHTML = shown.map(m => {
+        const mods = M.minionMods(m);
+        return `<div class="card" data-mi="${m.id}" style="cursor:pointer;${build.minion === m.id ? 'border-color:var(--accent)' : ''}"><div class="abil">${icon(m.icon)}<div>
+          <b class="r-${m.rarity}">${esc(m.name)}</b>${m.locked ? ' <span class="badge">locked</span>' : ''}${build.minion === m.id ? ' <span class="badge ok">equipped</span>' : ''}
+          <div class="small">${m.passive.map(p => esc(p.desc.replace('{value}', p.vals.value ? fmtVal(p.vals.value.v[0], p.vals.value.f) : '?'))).join('<br>')}</div>
+          ${m.active.length ? `<div class="small muted">Active: ${m.active.map(esc).join(', ')}</div>` : ''}
+          ${m.passive.length && !mods.length ? '<span class="badge no">text only</span>' : ''}</div></div></div>`;
+      }).join('') || '<p class="muted">No minion matches.</p>';
+    };
+    const saveF = () => store.set(LS_MINF, f);
+    $('#mi-q').oninput = e => { f.q = e.target.value; saveF(); list(); };
+    $('#mi-sort').onchange = e => { f.sort = e.target.value; saveF(); list(); };
+    $('#view').querySelectorAll('[data-rar]').forEach(cb => (cb.onchange = e => {
+      const r = e.target.dataset.rar;
+      f.rar = e.target.checked ? f.rar.concat(r) : f.rar.filter(x => x !== r);
+      e.target.parentElement.classList.toggle('on', e.target.checked);
+      saveF(); list();
+    }));
+    $('#mi-list').onclick = e => { const c = e.target.closest('[data-mi]'); if (c) { build.minion = c.dataset.mi; update(); } };
+    const none = $('#mi-none'); if (none) none.onclick = () => { build.minion = null; update(); };
+    list();
   }
 
   // ------------------------------------------------------------------ configuration

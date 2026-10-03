@@ -129,3 +129,10 @@ table.cmp tr.hdr td { color: var(--accent); font-size: 11px; text-transform: upp
 .card.ocr-on { box-shadow: 0 0 0 1px var(--accent) inset; }
 .drop > .card, .card.drop { outline: 2px dashed var(--accent); }
 pre { background: var(--panel2); padding: 6px 8px; border-radius: 4px; }
+
+/* list filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.filters input[type=search] { width: 280px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; user-select: none; background: var(--panel); }
+.chip input { display: none; }
+.chip.on { border-color: currentColor; background: var(--panel2); }
