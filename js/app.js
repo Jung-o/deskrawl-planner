@@ -4,7 +4,6 @@
   const D = window.DESKRAWL, M = window.MECH, C = window.Calc;
   const ICON = 'https://afkmeta.com/assets/deskrawl/';
   const LS_CUR = 'dkp.current', LS_SAVES = 'dkp.saves', LS_TAB = 'dkp.tab';
-  const MECH_VERSION = 4; // bump when DEFAULT_MECH values change
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const fmt = (n, d = 0) => (n == null || !isFinite(n) ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }));
@@ -27,8 +26,10 @@
     b = Object.assign(base, b);
     b.cfg = Object.assign(C.defaults().cfg, b.cfg || {});
     // Builds saved before a defaults update get the new (in-game confirmed) assumptions.
-    b.mech = b.mechV === MECH_VERSION ? Object.assign(C.defaults().mech, b.mech || {}) : C.defaults().mech;
-    b.mechV = MECH_VERSION;
+    // Only assumptions the user edited are kept; everything else follows the current defaults.
+    b.mechEdits = b.mechEdits || {};
+    b.mech = Object.assign(C.defaults().mech, b.mechEdits);
+    delete b.mechV;
     b.gear = b.gear || {}; b.talents = b.talents || {}; b.runes = b.runes || [];
     b.abilities = (b.abilities || []).concat([null, null, null, null]).slice(0, 4);
     b.abLv = (b.abLv || []).concat([10, 10, 10, 10]).slice(0, 4);
@@ -131,7 +132,7 @@
     $('#cls').onchange = e => {
       if (Object.keys(build.talents).length && !confirm('Changing class resets talents, abilities and runes. Continue?')) { e.target.value = build.cls; return; }
       const nb = defaultBuild(e.target.value);
-      nb.gear = build.gear; nb.level = build.level; nb.cfg = build.cfg; nb.mech = build.mech; nb.custom = build.custom; nb.name = build.name;
+      nb.gear = build.gear; nb.level = build.level; nb.cfg = build.cfg; nb.mechEdits = build.mechEdits; nb.custom = build.custom; nb.name = build.name;
       build = nb; update();
     };
     $('#level').onchange = e => { build.level = Math.max(1, Math.min(D.maxLevel, +e.target.value || 1)); update(); };
@@ -921,8 +922,8 @@
       </table>
       <p class="muted">The hero's own base stats (base health, crit, dodge, attack speed, health and primary stat per level) are stored in the <code>Player</code> object behind the game's anti-cheat value encryption (ACTk), so they stay assumptions here.</p></div>`;
     $('#view').innerHTML = html;
-    $('#view').querySelectorAll('[data-mech]').forEach(inp => (inp.onchange = e => { build.mech[e.target.dataset.mech] = +e.target.value; update(); }));
-    $('#as-reset').onclick = () => { build.mech = C.defaults().mech; update(); };
+    $('#view').querySelectorAll('[data-mech]').forEach(inp => (inp.onchange = e => { build.mechEdits[e.target.dataset.mech] = +e.target.value; update(); }));
+    $('#as-reset').onclick = () => { build.mechEdits = {}; update(); };
   }
 
   // ------------------------------------------------------------------ about

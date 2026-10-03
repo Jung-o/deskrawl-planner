@@ -26,6 +26,11 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(ROOT), **kw)
 
+    def end_headers(self):
+        # Always revalidate, so an updated planner is picked up without a hard refresh.
+        self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf8")
         self.send_response(code)

@@ -13,7 +13,7 @@ window.Calc = (function () {
     ['enemyElite', 'damage-vs-elite-pct'], ['enemyBleeding', 'damage-vs-bleeding-pct'],
     ['enemyDistant', 'damage-vs-distant-pct'], ['enemyPoisoned', 'damage-vs-poisoned-pct'],
     ['enemyBurning', 'damage-vs-burned-pct'], ['enemyStunned', 'damage-vs-stunned-pct'],
-    ['enemyDazed', 'damage-vs-dazed-pct'],
+    ['enemyDazed', 'damage-vs-dazed-pct'], ['enemyVulnerable', 'damage-vs-vulnerable-pct'],
   ];
   const STATUS_FLAG = { Vulnerable: 'enemyVulnerable', Poisoned: 'enemyPoisoned', Bleeding: 'enemyBleeding', Burning: 'enemyBurning',
     Slowed: 'enemySlowed', Stunned: 'enemyStunned', Dazed: 'enemyDazed', Frozen: 'enemyFrozen' };
@@ -150,7 +150,9 @@ window.Calc = (function () {
       if (!r) continue;
       add('Rune: ' + r.name, r.attrs.map(([st, vals]) => ({ s: st, v: vals[Math.min(rl, vals.length) - 1] })));
       setCount[r.set] = (setCount[r.set] || 0) + 1;
-      for (const a of r.abilities) runeLevels[a] = (runeLevels[a] || 0) + mech.abilityLevelPerRune;
+      // Published (wikily.gg): a rune adds +2 ability levels (+4 at rune level 6); a set's rune I adds +4 (+6).
+      const first = /-i$/.test(rid) && r.set;
+      for (const a of r.abilities) runeLevels[a] = (runeLevels[a] || 0) + (first ? 4 : 2) + Math.round(2 * (rl - 1) / 5);
     }
     const activeSets = [];
     for (const [sid, n] of Object.entries(setCount)) {
@@ -195,7 +197,8 @@ window.Calc = (function () {
     for (const e of abilities) {
       const meta = M.ABILITY_META[e.id] || {};
       const v = abilityValues(e.ab, e.lvl);
-      if (meta.buff && meta.buff.mods) add(e.ab.name + ' (buff)', meta.buff.mods(v).map(m => Object.assign(m, { up: 'buff:' + e.id })));
+      const buffMore = 1 + mods.filter(m => m.s === 'buff-more' && m.ab && m.ab.includes(e.id)).reduce((a, m) => a + m.v, 0);
+      if (meta.buff && meta.buff.mods) add(e.ab.name + ' (buff)', meta.buff.mods(v).map(m => Object.assign(m, { v: m.v * buffMore, up: 'buff:' + e.id })));
       if (meta.twin) add(e.ab.name, ['basic', 'strong'].map(role => ({ s: 'more', v: 1, role, up: 'buff:' + e.id, label: 'Spirit Twin' })));
       if (meta.stackBuff) add(e.ab.name + ' (stacks)', [{ s: 'attack-speed-pct', v: v.attackSpeed * Math.min(20, cfg.furiousStacks || 0) }]);
     }
@@ -222,7 +225,7 @@ window.Calc = (function () {
     const equipped = new Set(col.abilities.map(a => a.id));
     const mode = b.cfg.buffMode;
     function uptime(m) {
-      if (m.up || m.upCast || m.upSpecial || m.upMana || m.upChannel || m.upDodge) {
+      if (m.up || m.upCast || m.upSpecial || m.upMana || m.upChannel || m.upDodge || m.upTag || m.upBasicHits) {
         if (mode === 'always') return 1;
         if (mode === 'never') return 0;
       }
@@ -235,6 +238,11 @@ window.Calc = (function () {
       if (m.upMana) return clamp(m.upMana[1] * (rot.manaSpent || 0) / m.upMana[0], 0, 1);
       if (m.upChannel) return clamp(rot.channelFrac[m.upChannel] || 0, 0, 1);
       if (m.upDodge) return 1 - Math.exp(-(rot.dodgeRate || 0) * m.upDodge);
+      if (m.upTag) {
+        const rate = col.abilities.filter(a => a.ab.tags.includes(m.upTag[0])).reduce((x, a) => x + (rot.rate[a.id] || 0), 0);
+        return clamp(rate * m.upTag[1], 0, 1);
+      }
+      if (m.upBasicHits) return clamp(m.upBasicHits[1] * (rot.basicRate || 0) / m.upBasicHits[0], 0, 1);
       return 1;
     }
     function active(m, ab) {
@@ -242,6 +250,7 @@ window.Calc = (function () {
       if (m.tag && (!ab || !ab.tags.includes(m.tag))) return false;
       if (m.role && (!ab || ab.role !== m.role)) return false;
       if (m.needAb && !equipped.has(m.needAb)) return false;
+      if (m.needRole && !col.abilities.some(a => a.ab.role === m.needRole)) return false;
       if (m.cond) {
         if (typeof m.cond === 'function') { if (!m.cond(cfgEff)) return false; }
         else if (!cfgEff[m.cond]) return false;
@@ -310,12 +319,14 @@ window.Calc = (function () {
     const allInc = E.sum('bonus-all-damage-pct', ab, st);
     let condInc = 0;
     for (const [flag, stat] of COND_DMG) if (cfg[flag]) condInc += E.sum(stat, ab, st);
-    const dotInc = opts.dot ? E.sum('damage-over-time-pct', ab, st) : 0;
+    const dotInc = opts.dot ? E.sum('damage-over-time-pct', ab, st) + (opts.dotExtra || 0) : 0;
     const more = opts.noMore ? 1 : E.product('more', ab, st) * (opts.extraMore || 1);
-    const vuln = cfg.enemyVulnerable ? 1 + mech.vulnerableBase + E.sum('damage-vs-vulnerable-pct', ab, st) : 1;
+    const vuln = cfg.enemyVulnerable ? 1 + mech.vulnerableBase : 1;
     const estatic = el === 'lightning' && cfg.electrostatic > 0 ? 1 + Math.min(5, cfg.electrostatic) * mech.electrostaticPerStack : 1;
-    const hit = base * st.mainMult * (1 + elemInc) * (1 + roleInc) * (1 + allInc) * (1 + condInc) * (1 + dotInc) * more * vuln * estatic;
-    const cc = opts.dot ? 0 : clamp(E.sum('critical-hit-chance-pct', ab, st), 0, 1);
+    // Published formula (wikily.gg): (weapon + Damage) x ability % x (1 + primary/100) x (1 + element + Bonus All Damage)
+    // x crit x (1 + Damage vs bonuses) x (1 + Basic/Strong/Special bonus). Damage over time counts with the "Damage vs" bonuses here.
+    const hit = base * st.mainMult * (1 + elemInc + allInc) * (1 + roleInc) * (1 + condInc + dotInc) * more * vuln * estatic;
+    const cc = opts.dot ? 0 : clamp(E.sum('critical-hit-chance-pct', ab, st), 0, mech.critCap);
     const cd = opts.dot ? 0 : E.sum('critical-hit-damage-pct', ab, st);
     return {
       base, mainMult: st.mainMult, estatic, elemInc, roleInc, allInc, condInc, dotInc, more, vuln, hit, cc, cd,
@@ -335,7 +346,7 @@ window.Calc = (function () {
     const allParts = (meta.parts || []).slice();
     if (e.ab.role === 'basic') for (const c of E.list('extra-part', e.ab, st)) allParts.push({ v: null, fixed: c.v, el: c.m.el, hits: 1, label: c.src });
     for (const p of allParts) {
-      const pct = p.fixed != null ? p.fixed : v[p.v] || 0;
+      const pct = p.table ? tableVal(p.table, e.lvl) : p.fixed != null ? p.fixed : v[p.v] || 0;
       if (!pct) continue;
       const d = partDamage(b, E, st, wb, e.ab, p.el, pct, { extraMore });
       const h = p.hits * hitsMore;
@@ -349,8 +360,8 @@ window.Calc = (function () {
     }
     for (const c of E.list('cast-damage', e.ab, st)) {
       const d = partDamage(b, E, st, wb, e.ab, c.m.el || 'lightning', c.v, {});
-      const h = (c.m.hits || 1) * hitsMore;
-      const tot = h * (c.m.aoe ? N : 1);
+      const h = c.m.others ? 0 : (c.m.hits || 1) * hitsMore;
+      const tot = c.m.others ? (c.m.hits || 1) * Math.max(0, N - 1) : h * (c.m.aoe ? N : 1);
       single += d.avg * h;
       aoe += d.avg * tot;
       parts.push(Object.assign(d, { pct: c.v, hitsMain: h, hitsTotal: tot, label: c.m.label || c.src }));
@@ -388,7 +399,7 @@ window.Calc = (function () {
       const castTime = meta.channelKey ? (v[meta.channelKey] || 0) : 1 / R;
       specialTime += rate * castTime;
       if (meta.buff) {
-        const dur = (meta.buff.dur || v[meta.buff.durKey] || 0) * (1 + E.sum('duration-more', e.ab, st));
+        const dur = ((meta.buff.dur || v[meta.buff.durKey] || 0) + E.sum('duration-add', e.ab, st)) * (1 + E.sum('duration-more', e.ab, st));
         res.uptime[e.id] = clamp(dur * rate, 0, 1);
       }
       if (meta.twin) res.uptime[e.id] = clamp((v.duration || 0) * (1 + E.sum('duration-more', e.ab, st)) * rate, 0, 1);
@@ -438,6 +449,10 @@ window.Calc = (function () {
     const cfgEff = Object.assign({}, b.cfg);
     if (b.cfg.autoStatus) {
       for (const e of col.abilities) for (const s of (M.ABILITY_META[e.id] || {}).applies || []) if (STATUS_FLAG[s]) cfgEff[STATUS_FLAG[s]] = true;
+      // talents that inflict a status (Heavy Blow, Arcane Exposure)
+      for (const m of col.mods) {
+        if (m.s === 'applies' && STATUS_FLAG[m.status] && (!m.needRole || col.abilities.some(a => a.ab.role === m.needRole))) cfgEff[STATUS_FLAG[m.status]] = true;
+      }
     }
     if (cfgEff.enemyFrozen || cfgEff.enemyStunned) cfgEff.enemyImmobilized = true;
     if (cfgEff.enemyFrozen) cfgEff.enemySlowed = true;
@@ -533,22 +548,31 @@ window.Calc = (function () {
     const bleeders = appliers('bleed').map(a => ({ a, rate: rot.rate[a.id] || 0 }))
       .concat(E.list('bleed-from', null, st).length ? col.abilities.filter(a => a.id === 'whirlwind').map(a => ({ a, rate: rot.rate[a.id] || 0 })) : []);
     if (bleeders.some(x => x.rate > 0)) {
-      const d = partDamage(b, E, st, wb, null, 'physical', mech.bleedPct / mech.bleedDur, { dot: true });
+      // Reapplying carries over the remaining damage, so every application deals its full bleedPct.
+      let apps = 0;
+      for (const x of bleeders) {
+        const meta = M.ABILITY_META[x.a.id] || {};
+        const cuts = x.a.id === 'whirlwind' ? 0.3 * (meta.parts || [])[0].hits : (meta.parts || []).reduce((t, p) => t + (p.others ? 0 : p.hits), 0) || 1;
+        apps += x.rate * cuts;
+      }
+      const d = partDamage(b, E, st, wb, null, 'physical', mech.bleedPct * apps, { dot: true });
       const aoe = bleeders.some(x => (M.ABILITY_META[x.a.id].parts || []).some(p => p.aoe));
-      dots.push({ name: 'Bleeding', dps: d.hit, dpsAoe: d.hit * (aoe ? N : 1), detail: d });
+      dots.push({ name: 'Bleeding (' + apps.toFixed(2) + ' / s)', dps: d.hit, dpsAoe: d.hit * (aoe ? N : 1), detail: d });
     }
-    let poisonApps = 0, poisonAoe = false;
+    let poisonApps = 0, poisonAoe = false, poisonLvl = 1;
     for (const a of col.abilities) {
       const meta = M.ABILITY_META[a.id] || {};
       if (!meta.poison) continue;
       const v = abilityValues(a.ab, a.lvl);
       const chance = clamp((meta.poison.chance != null ? meta.poison.chance : v[meta.poison.chanceKey] || 0) + E.sum('poison-chance', a.ab, st), 0, 1);
       poisonApps += (rot.rate[a.id] || 0) * chance * meta.poison.stacks;
+      poisonLvl = Math.max(poisonLvl, a.lvl);
       if ((meta.parts || []).some(p => p.aoe)) poisonAoe = true;
     }
     if (poisonApps > 0) {
-      const stacks = Math.min(mech.poisonMaxStacks, poisonApps * mech.poisonDur);
-      const d = partDamage(b, E, st, wb, null, 'poison', mech.poisonPctPerSec * stacks, { dot: true });
+      const dur = mech.poisonDur + 0.5 * (poisonLvl - 1) + E.sum('poison-dur-add', null, st);
+      const stacks = Math.min(mech.poisonMaxStacks, poisonApps * dur);
+      const d = partDamage(b, E, st, wb, null, 'poison', mech.poisonPctPerSec * stacks, { dot: true, dotExtra: E.sum('poison-dot-pct', null, st) });
       dots.push({ name: 'Poisoned (' + stacks.toFixed(1) + ' stacks)', dps: d.hit, dpsAoe: d.hit * (poisonAoe ? N : 1), detail: d });
     }
     const burners = appliers('burn').filter(a => rot.rate[a.id] > 0);
@@ -579,14 +603,15 @@ window.Calc = (function () {
       const taken = (1 - base) * (1 - typeDR) * less;
       types[el] = { typeDR, mitig: 1 - taken, ehp: st.maxHealth / Math.max(1e-9, taken) };
     }
-    const critDR = clamp(E.sum('critical-damage-reduction-pct', null, st) + mech.baseCritDR + st.dex * mech.critDrPerDex, 0, cap);
+    const critDR = clamp(E.sum('critical-damage-reduction-pct', null, st) + st.dex / (st.dex + mech.critDrDexK), 0, cap);
     // In-game "Toughness": life / (1 - average of armor and magic resist reduction) / (1 - dodge). Matches the character sheet.
     const toughness = st.maxHealth / (1 - (armorDR + mrDR) / 2) / Math.max(0.01, 1 - st.dodge);
     const critMulti = Math.max(1, 1 + (mech.enemyCritMulti - 1) * (1 - critDR));
     const dodge = st.dodge;
     const hit = Math.max(1, cfg.enemyHit || 1);
     const kills = cfg.killsPerSec || 0;
-    const recovery = st.lifeRegen + st.lifeOnHit * (dmg.hitsPerSec || 0) + st.lifeOnKill * kills;
+    // Published (wikily.gg): Recovery = (Life Regeneration + attacks per second x Life on Hit + 0.25 x Life on Kill) x (Toughness / Max Health)
+    const recovery = (st.lifeRegen + (rot.R || 0) * st.lifeOnHit + 0.25 * st.lifeOnKill) * (toughness / Math.max(1, st.maxHealth));
     // shields from abilities
     const shields = [];
     const rs = E._col.abilities.find(a => a.id === 'rage-shield');

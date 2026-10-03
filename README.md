@@ -54,17 +54,24 @@ python tools/ocr_item.py tooltip.png --slot weapon --level 24
 
 Re-run `node tools/crawl.js` after a game patch.
 
-## Assumptions (not in any published data)
+## Formulas
 
-These are the defaults on the Assumptions tab. Change them to match your in-game character sheet:
+Most of the math is now published by [wikily.gg](https://wikily.gg/deskrawl/stats/damage-formula) and checked against an in-game character sheet:
 
-- Main stat: +1% damage per point; 1 armor per Strength, 1 magic resist per Intelligence, 0.01% dodge per Dexterity.
-- Armor and magic resist damage reduction: `value / (value + 50 × enemy level)`.
-- Base stats: life `200 + 20/level`, mana 100, 2 mana regen per second, 5% crit chance, +50% crit damage, 3 main stat per level.
-- Vulnerable: +20% damage taken. Poison: 15% weapon damage per second per stack, 4 s, max 10 stacks. Burn: 20% per second. Bleed: 250% over 5 s.
-- Hit counts for channelled or multi-hit skills whose numbers aren't published: Rapid Fire, Whirlwind, Frost Beam and others are marked "assumption" next to the ability.
+- Hit = (weapon damage + Damage) × ability % × (1 + main stat / 100) × (1 + element + Bonus All Damage) × crit × (1 + "Damage vs" bonuses) × (1 + Basic/Strong/Special bonus). Crits deal 1 + Critical Hit Damage (heroes start at 150%, so 250%); crit chance is capped at 85%.
+- Vulnerable targets take ×1.3. Poisoned deals 50% weapon damage every 2 s per stack (up to 100 stacks, 6 s + 0.5 s per ability level). Bleeding deals 250% over 5 s and reapplying keeps the remaining damage.
+- Armor and magic resist reduce damage by `R / (R + 50 × enemy level)`. Dodge is capped at 85%. Strength gives 1 armor and Intelligence 1 magic resist per point; Dexterity gives critical damage reduction `Dex / (Dex + 1500)`.
+- Toughness = life ÷ (1 − average of the armor and magic resist reduction) ÷ (1 − dodge). Recovery = (life regen + attacks/s × life on hit + 0.25 × life on kill) × Toughness ÷ life.
+- Base stats: 100 life + 16 per level, 100 mana, 10 of the class main stat (no growth per level), 5% dodge.
+- Spirit Twin repeats your Basic and Strong attacks at full damage while it's out (confirmed in game).
+- Runes raise their ability by 2 levels (4 at rune level 6); a set's rune I by 4 (6).
 
-The hero's base stats are in the game files (`Player` component) but protected by the anti-cheat toolkit's value encryption, so they aren't decoded yet.
+### Still assumptions
+
+Editable on the Assumptions tab (only the values you change are saved with a build):
+
+- Burn damage per tick, the Electrostatic bonus per stack, base mana regeneration.
+- Hit counts the game doesn't publish: Rapid Fire arrows, Whirlwind hits per 4 s channel, Frost Beam and Ice Meteor ticks, Sacred Orbs and Divine Thunder hits, Whirlwind Staff tornado hits, Fire Elemental fireballs. They're marked "assumption" next to the ability.
 
 ## Files
 
