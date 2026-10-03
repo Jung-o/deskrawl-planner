@@ -350,8 +350,7 @@
       <div class="row" style="justify-content:flex-start;gap:14px;margin-bottom:10px">
         <label>Paragon level <input id="par-level" type="number" min="0" value="${par.level || 0}"></label>
         <span>Points spent <b class="${pp.spent > pp.avail ? 'bad' : ''}">${pp.spent} / ${pp.avail}</b></span>
-        <button id="par-reset">Reset points</button></div>
-      <div class="cards">`;
+        <button id="par-reset">Reset points</button></div>`;
     const groups = [...new Set(M.PARAGON.map(p => p.group))];
     // what one more point of each stat is worth
     const gains = {};
@@ -365,19 +364,19 @@
     const bestDps = Object.entries(gains).sort((a, b) => b[1].dps - a[1].dps)[0];
     const bestTough = Object.entries(gains).sort((a, b) => b[1].tough - a[1].tough)[0];
     const g = v => (v > 1e-7 ? `<span class="good">+${fmt(v * 100, 2)}%</span>` : '<span class="muted">—</span>');
+    html += `<table class="t par"><tr><th>Stat</th><th>Per point</th><th>Points</th><th>Total</th><th>DPS / point</th><th>Toughness / point</th></tr>`;
     for (const grp of groups) {
-      html += `<div class="card"><h3>${esc(grp)}</h3><table class="t"><tr><th>Stat</th><th>Points</th><th>Total</th><th>DPS / pt</th><th>Toughness / pt</th></tr>`;
+      html += `<tr class="hdr"><td colspan="6">${esc(grp)}</td></tr>`;
       for (const p of M.PARAGON.filter(x => x.group === grp)) {
         const n = par.pts[p.stat] || 0;
         const ga = gains[p.stat];
         const tags = (bestDps && bestDps[0] === p.stat && bestDps[1].dps > 0 ? ' <span class="badge ok">best DPS</span>' : '') + (bestTough && bestTough[0] === p.stat && bestTough[1].tough > 0 ? ' <span class="badge ok">best Toughness</span>' : '');
-        html += `<tr><td>${esc(p.name)}${tags}<br><span class="muted small">${val(p, 1)} per point${p.max ? ', max ' + p.max : ''}</span></td>
-          <td><span style="white-space:nowrap"><button class="small" data-pd="${p.stat}" data-d="-1">−</button> <input type="number" min="0" ${p.max ? `max="${p.max}"` : ''} data-pv="${p.stat}" value="${n}" style="width:56px"> <button class="small" data-pd="${p.stat}" data-d="1">+</button></span></td>
+        html += `<tr><td>${esc(p.name)}${tags}</td><td class="muted">${val(p, 1)}${p.max ? ' <span class="small">(max ' + p.max + ')</span>' : ''}</td>
+          <td class="pts"><button class="small" data-pd="${p.stat}" data-d="-1">−</button><input type="number" min="0" ${p.max ? `max="${p.max}"` : ''} data-pv="${p.stat}" value="${n}"><button class="small" data-pd="${p.stat}" data-d="1">+</button></td>
           <td>${n ? '+' + val(p, n) : ''}</td><td>${ga ? g(ga.dps) : '<span class="muted">max</span>'}</td><td>${ga ? g(ga.tough) : ''}</td></tr>`;
       }
-      html += '</table></div>';
     }
-    html += '</div>';
+    html += '</table>';
     $('#view').innerHTML = html;
     const setPts = (stat, n) => {
       const p = M.PARAGON.find(x => x.stat === stat);

@@ -136,3 +136,10 @@ pre { background: var(--panel2); padding: 6px 8px; border-radius: 4px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; user-select: none; background: var(--panel); }
 .chip input { display: none; }
 .chip.on { border-color: currentColor; background: var(--panel2); }
+
+/* paragon */
+table.par { max-width: 980px; }
+table.par tr.hdr td { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; padding-top: 12px; text-align: left; }
+table.par td.pts { white-space: nowrap; }
+table.par td.pts input { width: 52px; margin: 0 4px; text-align: center; -moz-appearance: textfield; }
+table.par td.pts input::-webkit-inner-spin-button, table.par td.pts input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
