@@ -11,7 +11,7 @@ window.MECH = (function () {
   const DEFAULT_MECH = [
     // [key, default, label, help, group]
     ['dmgPerMainStat', 0.01, 'Damage per main stat point', 'Confirmed in game: each point of the main stat (STR Warrior, DEX Hunter/Monk, INT Sorcerer) adds 1% increased damage.', 'Offense'],
-    ['baseCritChance', 0.05, 'Base critical hit chance', 'Crit chance before any bonus.', 'Offense'],
+    ['baseCritChance', 0.05, 'Base critical hit chance', 'Confirmed: 5% on a gearless character sheet and on wikily.gg.', 'Offense'],
     ['baseCritDamage', 1.5, 'Base critical hit damage', 'Published (wikily.gg) and matches the character sheet: heroes start at 150%, and a crit multiplies damage by 1 + Critical Hit Damage, so 250%.', 'Offense'],
     ['critCap', 0.85, 'Critical hit chance cap', 'Published (wikily.gg): at most 85%.', 'Offense'],
     ['vulnerableBase', 0.3, 'Vulnerable: more damage taken', 'Published (wikily.gg): a [Vulnerable] target takes x1.3 damage. "Damage vs Vulnerable" is a separate bonus.', 'Offense'],
@@ -30,12 +30,12 @@ window.MECH = (function () {
     ['baseManaRegen', 2, 'Base mana regeneration / s', '', 'Base stats'],
     ['baseMainStat', 10, 'Base main stat', 'Confirmed for the Monk: 10 Dexterity with no gear and no Dexterity talent. Assumed the same for the other classes.', 'Base stats'],
     ['mainStatPerLevel', 0, 'Main stat gained per level', 'Confirmed in game: none — the main stat only comes from items, talents, gems and runes.', 'Base stats'],
-    ['baseArmor', 0, 'Base armor', '', 'Base stats'],
-    ['baseMagicResist', 0, 'Base magic resist', '', 'Base stats'],
-    ['armorPerStr', 1, 'Armor per Strength', 'Strength "also grants X Armor".', 'Defense'],
+    ['baseArmor', 0, 'Base armor', 'Confirmed: a gearless character sheet shows no armor.', 'Base stats'],
+    ['baseMagicResist', 0, 'Base magic resist', 'Confirmed: a gearless character sheet shows no magic resist.', 'Base stats'],
+    ['armorPerStr', 1, 'Armor per Strength', 'Published (wikily.gg): 1 Armor per Strength for every hero.', 'Defense'],
     ['dodgePerDex', 0, 'Dodge chance per Dexterity', 'Confirmed in game: Dexterity grants no dodge (it grants Critical Damage Reduction instead).', 'Defense'],
     ['critDrDexK', 1500, 'Dexterity critical damage reduction constant', 'Published (wikily.gg): Dexterity gives Critical Damage Reduction = Dex / (Dex + 1500). 10 Dex = 0.66% (0.7% on your sheet), 38 Dex = 2.5%.', 'Defense'],
-    ['mrPerInt', 1, 'Magic resist per Intelligence', 'Intelligence "also grants X Magic Resist".', 'Defense'],
+    ['mrPerInt', 1, 'Magic resist per Intelligence', 'Published (wikily.gg): 1 Magic Resist per Intelligence for every hero.', 'Defense'],
     ['armorK', 50, 'Armor constant (x enemy level)', 'Confirmed in game: reduction = Armor / (Armor + 50 x enemy level). 983 armor = 45% at level 24.', 'Defense'],
     ['mrK', 50, 'Magic resist constant (x enemy level)', 'Confirmed in game: same curve as armor. 146 magic resist = 11% at level 24.', 'Defense'],
     ['drCap', 1, 'Damage reduction cap', 'Published (wikily.gg): element and generic Damage Reductions go up to 100%.', 'Defense'],
@@ -371,6 +371,26 @@ window.MECH = (function () {
     'strong-shield-of-the-atheron': { 6: () => [{ s: 'critical-hit-chance-pct', v: 0.2, up: 'buff:rage-shield' }, { s: 'critical-hit-damage-pct', v: 0.5, up: 'buff:rage-shield' }] },
   };
 
+  // ---------------------------------------------------------------- paragon (unlocks at level 70, 1 point per paragon level)
+  // Values per point and caps: GameConfig.ParagonStats in the game files, same as wikily.gg/deskrawl/paragon.
+  const PARAGON = [
+    ['Core', 'strength', 'Strength', 1, 0],
+    ['Core', 'dexterity', 'Dexterity', 1, 0],
+    ['Core', 'intelligence', 'Intelligence', 1, 0],
+    ['Core', 'bonus-move-speed-pct', 'Bonus Move Speed', 0.005, 50],
+    ['Core', 'max-mana', 'Max Mana', 2, 50],
+    ['Offense', 'critical-hit-chance-pct', 'Critical Hit Chance', 0.001, 50],
+    ['Offense', 'critical-hit-damage-pct', 'Critical Hit Damage', 0.02, 50],
+    ['Offense', 'attack-speed-pct', 'Attack Speed', 0.004, 50],
+    ['Offense', 'cooldown-reduction-pct', 'Cooldown Reduction', 0.002, 50],
+    ['Defense', 'bonus-armor-pct', 'Bonus Armor', 0.01, 50],
+    ['Defense', 'bonus-magic-resist-pct', 'Bonus Magic Resist', 0.01, 50],
+    ['Defense', 'bonus-health-pct', 'Bonus Health', 0.005, 50],
+    ['Defense', 'life-regeneration', 'Life Regeneration', 4, 50],
+    ['Utility', 'life-on-hit', 'Life on Hit', 5, 25],
+    ['Utility', 'health-potion-find-pct', 'Health Potion Find', 0.05, 0],
+  ].map(([group, stat, name, per, max]) => ({ group, stat, name, per, max }));
+
   // ---------------------------------------------------------------- text -> stat (minion passives, custom lines)
   // [regex, flat stat, percent stat]
   const TEXT_STATS = [
@@ -381,7 +401,7 @@ window.MECH = (function () {
     [/^bonus armou?r$/, null, 'bonus-armor-pct'],
     [/^magic resist(ance)?$/, 'magic-resist', 'bonus-magic-resist-pct'],
     [/^(max(imum)? )?mana$/, 'max-mana', 'max-mana-pct'],
-    [/^(strength|str)$/, 'strength', null], [/^(dexterity|dex)$/, 'dexterity', null], [/^(intelligence|int)$/, 'intelligence', null],
+    [/^(strength|str)$/, 'strength', 'strength-pct'], [/^(dexterity|dex)$/, 'dexterity', 'dexterity-pct'], [/^(intelligence|int)$/, 'intelligence', 'intelligence-pct'],
     [/^(flat )?damage$/, 'damage', 'bonus-all-damage-pct'],
     [/^all damage$/, null, 'bonus-all-damage-pct'],
     [/^(physical|fire|cold|lightning|poison|arcane) damage$/, null, m => m[1] + '-damage-pct'],
@@ -402,13 +422,14 @@ window.MECH = (function () {
     [/^dodge( chance)?$/, null, 'dodge-chance-pct'],
     [/^cooldown reduction$/, null, 'cooldown-reduction-pct'],
     [/^mana cost reduction$/, null, 'mana-cost-reduction-pct'],
-    [/^life on hit$/, 'life-on-hit', null], [/^life on kill$/, 'life-on-kill', null], [/^mana on kill$/, 'mana-on-kill', null],
+    [/^life on hit$/, 'life-on-hit', 'life-on-hit-pct'], [/^life on kill$/, 'life-on-kill', null], [/^mana on kill$/, 'mana-on-kill', null],
     [/^(life|health) regen(eration)?( per second)?$/, 'life-regeneration', null],
     [/^mana regen(eration)?( per second)?$/, 'mana-regen', null],
     [/^thorns?$/, 'thorns', 'thorns-pct'],
     [/^healing received( from all sources)?$/, null, 'healing-received-pct'],
     [/^(health )?potion charges$/, 'bonus-potion-charges', null],
     [/^damage taken$/, null, 'damage-taken-less'],
+    [/^(item|magic) find$/, null, 'item-find-pct'], [/^gold (find|gained from enemies)$/, null, 'gold-find-pct'], [/^material find$/, null, 'material-find-pct'],
   ];
 
   function textToStat(phrase, isPct) {
@@ -476,5 +497,5 @@ window.MECH = (function () {
     if (TALENT_VALUES[t.id]) t.vals = Object.assign({}, t.vals, TALENT_VALUES[t.id]);
   }
 
-  return { DEFAULT_MECH, CONFIG_DEFS, ABILITY_META, TALENT_FX: T, TALENT_VALUES, ITEM_FX, SET_FX, minionMods, parseCustom, textToStat };
+  return { DEFAULT_MECH, CONFIG_DEFS, ABILITY_META, TALENT_FX: T, TALENT_VALUES, PARAGON, ITEM_FX, SET_FX, minionMods, parseCustom, textToStat };
 })();

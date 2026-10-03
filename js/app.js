@@ -31,6 +31,7 @@
     b.mech = Object.assign(C.defaults().mech, b.mechEdits);
     delete b.mechV;
     b.gear = b.gear || {}; b.talents = b.talents || {}; b.runes = b.runes || [];
+    b.paragon = Object.assign({ level: 0, pts: {} }, b.paragon || {});
     b.abilities = (b.abilities || []).concat([null, null, null, null]).slice(0, 4);
     b.abLv = (b.abLv || []).concat([10, 10, 10, 10]).slice(0, 4);
     return b;
@@ -132,7 +133,7 @@
     $('#cls').onchange = e => {
       if (Object.keys(build.talents).length && !confirm('Changing class resets talents, abilities and runes. Continue?')) { e.target.value = build.cls; return; }
       const nb = defaultBuild(e.target.value);
-      nb.gear = build.gear; nb.level = build.level; nb.cfg = build.cfg; nb.mechEdits = build.mechEdits; nb.custom = build.custom; nb.name = build.name;
+      nb.gear = build.gear; nb.paragon = build.paragon; nb.level = build.level; nb.cfg = build.cfg; nb.mechEdits = build.mechEdits; nb.custom = build.custom; nb.name = build.name;
       build = nb; update();
     };
     $('#level').onchange = e => { build.level = Math.max(1, Math.min(D.maxLevel, +e.target.value || 1)); update(); };
@@ -228,6 +229,7 @@
     </div>`);
     const warns = [];
     tp.probs.forEach(p => warns.push(p));
+    C.paragonProblems(build).probs.forEach(p => warns.push(p));
     if (!build.gear.weapon || !(build.gear.weapon.item || build.gear.weapon.rar)) warns.push('No weapon: using the "no weapon" damage from Assumptions.');
     build.abilities.forEach((id, i) => { const a = id && D.abilities[id]; if (a && a.req > build.level) warns.push(`${a.name} needs level ${a.req}.`); });
     if (r.col.customBad.length) warns.push('Custom lines not understood: ' + r.col.customBad.map(esc).join('; '));
@@ -239,7 +241,7 @@
 
   // ------------------------------------------------------------------ tabs
   const TABS = [
-    ['talents', 'Talents'], ['skills', 'Skills'], ['items', 'Items'], ['runes', 'Runes'], ['minion', 'Minion'],
+    ['talents', 'Talents'], ['paragon', 'Paragon'], ['skills', 'Skills'], ['items', 'Items'], ['runes', 'Runes'], ['minion', 'Minion'],
     ['config', 'Configuration'], ['calcs', 'Calcs'], ['assumptions', 'Assumptions'], ['about', 'About'],
   ];
   function initTabs() {
@@ -249,7 +251,7 @@
   function renderView() {
     [...$('#tabs').children].forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     hideTip();
-    ({ talents: viewTalents, skills: viewSkills, items: viewItems, runes: viewRunes, minion: viewMinion, config: viewConfig,
+    ({ talents: viewTalents, paragon: viewParagon, skills: viewSkills, items: viewItems, runes: viewRunes, minion: viewMinion, config: viewConfig,
       calcs: viewCalcs, assumptions: viewAssumptions, about: viewAbout }[tab] || viewTalents)();
   }
 
@@ -335,6 +337,63 @@
       showTip(tnodes._html, e);
     };
     tnodes.onmouseleave = () => { tnodes._hover = null; hideTip(); };
+  }
+
+  // ------------------------------------------------------------------ paragon
+  function viewParagon() {
+    const par = build.paragon;
+    const pp = C.paragonProblems(build);
+    const open = build.level >= D.maxLevel;
+    const val = (p, n) => (p.per < 1 || /pct$/.test(p.stat) ? fmt(p.per * n * 100, p.per * 100 % 1 ? 1 : 0) + '%' : fmt(p.per * n));
+    let html = `<h2>Paragon <span class="muted small">— 1 point per Paragon level after level ${D.maxLevel}. The gain columns show what one more point adds.</span></h2>
+      ${open ? '' : `<div class="warn">Paragon unlocks at level ${D.maxLevel}. Points set here are still counted, with a warning.</div>`}
+      <div class="row" style="justify-content:flex-start;gap:14px;margin-bottom:10px">
+        <label>Paragon level <input id="par-level" type="number" min="0" value="${par.level || 0}"></label>
+        <span>Points spent <b class="${pp.spent > pp.avail ? 'bad' : ''}">${pp.spent} / ${pp.avail}</b></span>
+        <button id="par-reset">Reset points</button></div>
+      <div class="cards">`;
+    const groups = [...new Set(M.PARAGON.map(p => p.group))];
+    // what one more point of each stat is worth
+    const gains = {};
+    for (const p of M.PARAGON) {
+      if (p.max && (par.pts[p.stat] || 0) >= p.max) continue;
+      const nb = JSON.parse(JSON.stringify(build));
+      nb.paragon.pts[p.stat] = (nb.paragon.pts[p.stat] || 0) + 1;
+      const r2 = C.compute(normalize(nb));
+      gains[p.stat] = { dps: r2.dmg.dpsSingle / (result.dmg.dpsSingle || 1) - 1, tough: r2.def.toughness / (result.def.toughness || 1) - 1 };
+    }
+    const bestDps = Object.entries(gains).sort((a, b) => b[1].dps - a[1].dps)[0];
+    const bestTough = Object.entries(gains).sort((a, b) => b[1].tough - a[1].tough)[0];
+    const g = v => (v > 1e-7 ? `<span class="good">+${fmt(v * 100, 2)}%</span>` : '<span class="muted">—</span>');
+    for (const grp of groups) {
+      html += `<div class="card"><h3>${esc(grp)}</h3><table class="t"><tr><th>Stat</th><th>Points</th><th>Total</th><th>DPS / pt</th><th>Toughness / pt</th></tr>`;
+      for (const p of M.PARAGON.filter(x => x.group === grp)) {
+        const n = par.pts[p.stat] || 0;
+        const ga = gains[p.stat];
+        const tags = (bestDps && bestDps[0] === p.stat && bestDps[1].dps > 0 ? ' <span class="badge ok">best DPS</span>' : '') + (bestTough && bestTough[0] === p.stat && bestTough[1].tough > 0 ? ' <span class="badge ok">best Toughness</span>' : '');
+        html += `<tr><td>${esc(p.name)}${tags}<br><span class="muted small">${val(p, 1)} per point${p.max ? ', max ' + p.max : ''}</span></td>
+          <td><span style="white-space:nowrap"><button class="small" data-pd="${p.stat}" data-d="-1">−</button> <input type="number" min="0" ${p.max ? `max="${p.max}"` : ''} data-pv="${p.stat}" value="${n}" style="width:56px"> <button class="small" data-pd="${p.stat}" data-d="1">+</button></span></td>
+          <td>${n ? '+' + val(p, n) : ''}</td><td>${ga ? g(ga.dps) : '<span class="muted">max</span>'}</td><td>${ga ? g(ga.tough) : ''}</td></tr>`;
+      }
+      html += '</table></div>';
+    }
+    html += '</div>';
+    $('#view').innerHTML = html;
+    const setPts = (stat, n) => {
+      const p = M.PARAGON.find(x => x.stat === stat);
+      n = Math.max(0, Math.round(n || 0));
+      if (p.max) n = Math.min(p.max, n);
+      if (n) par.pts[stat] = n; else delete par.pts[stat];
+      update();
+    };
+    $('#par-level').onchange = e => { par.level = Math.max(0, Math.round(+e.target.value || 0)); update(); };
+    $('#par-reset').onclick = () => { par.pts = {}; update(); };
+    $('#view').querySelectorAll('[data-pd]').forEach(btn => (btn.onclick = () => {
+      const d = +btn.dataset.d;
+      if (d > 0 && C.paragonProblems(build).spent >= (par.level || 0)) return toast('No Paragon points left: raise the Paragon level.');
+      setPts(btn.dataset.pd, (par.pts[btn.dataset.pd] || 0) + d);
+    }));
+    $('#view').querySelectorAll('[data-pv]').forEach(inp => (inp.onchange = e => setPts(e.target.dataset.pv, +e.target.value)));
   }
 
   // ------------------------------------------------------------------ skills

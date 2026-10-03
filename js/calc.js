@@ -207,6 +207,13 @@ window.Calc = (function () {
     const minion = b.minion && D.minions.find(m => m.id === b.minion);
     if (minion) add('Minion: ' + minion.name, M.minionMods(minion));
 
+    // paragon points
+    const par = b.paragon || {};
+    for (const p of M.PARAGON) {
+      const n = (par.pts || {})[p.stat] || 0;
+      if (n) add('Paragon: ' + p.name, [{ s: p.stat, v: p.per * n }]);
+    }
+
     // custom
     const custom = M.parseCustom(b.custom);
     add('Custom', custom.mods);
@@ -283,9 +290,9 @@ window.Calc = (function () {
     const mech = b.mech, main = MAIN[b.cls];
     const st = {};
     for (let pass = 0; pass < 2; pass++) {
-      st.str = E.sum('strength', null, st);
-      st.dex = E.sum('dexterity', null, st);
-      st.int = E.sum('intelligence', null, st);
+      st.str = E.sum('strength', null, st) * (1 + E.sum('strength-pct', null, st));
+      st.dex = E.sum('dexterity', null, st) * (1 + E.sum('dexterity-pct', null, st));
+      st.int = E.sum('intelligence', null, st) * (1 + E.sum('intelligence-pct', null, st));
       st.main = { strength: st.str, dexterity: st.dex, intelligence: st.int }[main];
       st.maxHealth = E.sum('max-health', null, st) * (1 + E.sum('bonus-health-pct', null, st)) * E.product('max-health-more', null, st);
       st.maxMana = E.sum('max-mana', null, st) * (1 + E.sum('max-mana-pct', null, st));
@@ -298,7 +305,7 @@ window.Calc = (function () {
     st.cdr = E.sum('cooldown-reduction-pct', null, st);
     st.manaRegen = E.sum('mana-regen', null, st) * (1 + E.sum('mana-regeneration-pct', null, st));
     st.lifeRegen = E.sum('life-regeneration', null, st);
-    st.lifeOnHit = E.sum('life-on-hit', null, st);
+    st.lifeOnHit = E.sum('life-on-hit', null, st) * (1 + E.sum('life-on-hit-pct', null, st));
     st.lifeOnKill = E.sum('life-on-kill', null, st);
     st.manaOnKill = E.sum('mana-on-kill', null, st);
     st.moveSpeed = E.sum('bonus-move-speed-pct', null, st);
@@ -625,6 +632,16 @@ window.Calc = (function () {
   }
 
   // ------------------------------------------------------------------ talent validation
+  function paragonProblems(b) {
+    const par = b.paragon || {};
+    const spent = Object.values(par.pts || {}).reduce((a, x) => a + x, 0);
+    const probs = [];
+    if (spent && b.level < D.maxLevel) probs.push(`Paragon points need level ${D.maxLevel}.`);
+    if (spent > (par.level || 0)) probs.push(`${spent} Paragon points spent, Paragon level is ${par.level || 0}.`);
+    for (const p of M.PARAGON) if (p.max && ((par.pts || {})[p.stat] || 0) > p.max) probs.push(`${p.name}: at most ${p.max} Paragon points.`);
+    return { spent, avail: par.level || 0, probs };
+  }
+
   function talentProblems(b) {
     const tree = D.talents[b.cls] || [];
     const req = D.rowReq[b.cls] || {};
@@ -657,6 +674,6 @@ window.Calc = (function () {
     return { health: h, damage: d };
   }
 
-  return { compute, blankBuild, defaults, talentProblems, abilityValues, talentValues, tableVal, range, rolls, sockets, canAncient,
+  return { compute, blankBuild, defaults, talentProblems, paragonProblems, abilityValues, talentValues, tableVal, range, rolls, sockets, canAncient,
     itemRarity, slotDef, gemById, MAIN, ELEMENTS, GAME_CONFIG, enemyScale };
 })();

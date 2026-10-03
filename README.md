@@ -31,6 +31,7 @@ python tools/ocr_item.py tooltip.png --slot weapon --level 24
 ## What it does
 
 - **Talents**: the full tree of each class with its row gates. Left-click adds a point, right-click removes one. Hovering a talent shows how one more point changes DPS and Toughness.
+- **Paragon**: after level 70, set your Paragon level and spend points in the 15 Paragon stats (values from the game files). Each stat shows what one more point adds to DPS and Toughness, and the best next point is tagged.
 - **Skills**: the four ability slots and their levels. A table shows each ability's casts per second, damage per cast, DPS, and buff uptime.
 - **Items**: 12 slots. Pick a generic item of a rarity or a named base, set the item level and Ancient flag, add affixes (checked against the in-game ranges), and socket gems. Legendary and divine effects are in the calculations when the planner models them.
 - **Runes**: slots unlock with hero level. Rune levels 1–6 and set bonuses (2/4/6 pieces) are supported.
@@ -80,3 +81,47 @@ Editable on the Assumptions tab (only the values you change are saved with a bui
 - `js/mechanics.js`: assumptions, configuration, ability hit models, and the talent/legendary/set effect mappings
 - `tools/crawl.js`: data refresh
 - `tools/server.py`, `tools/ocr_item.py`: local server and item screenshot reader
+
+## Missing info you can check in game
+
+These numbers aren't in the game data or on any site we found. If you play the class, a quick check in the **Training Grounds** (training dummy) settles them: watch the damage numbers during one cast, or read the tooltip. Send the result and it replaces the assumption in `js/mechanics.js`.
+
+### Any class
+
+- **Base mana regeneration**: Mana Regeneration on the character sheet with no gear and no mana talents (assumed 2/s).
+- **Cooldown reduction cap**: the highest Cooldown Reduction the sheet will show (assumed 75%).
+- **Weapon damage with no weapon**: unequip the weapon and check the "Attack" value or a hit on the dummy (assumed 10).
+- **Enemy critical hits**: how much harder an enemy crit hits you than a normal hit (assumed ×1.5).
+- **Blacksmith upgrades**: an item's stats before and after one upgrade (+1), to see how upgrades scale affixes.
+- **Divine items**: the fixed stats of Glorious Gladiator Helmet, Visage of the Undying, The Grandmother, Violet Skybow, Soulrender and Remnant of the Elder Sage.
+- **Level-10 ability tooltips**: AFK Meta and wikily.gg disagree slightly (Threefold Strike 110% / 400% vs 107.5% / 380%). One level-10 tooltip shows which site is current.
+
+### Monk
+
+- **Sacred Orbs**: how many times one orb hits a single enemy per cast (assumed 5).
+- **Divine Thunder**: number of pulses during the 3 s channel (assumed 4).
+- **Whirlwind Staff**: hits on a single enemy per cast, from both tornados (assumed 4).
+- **Electrostatic**: the extra Lightning damage per stack (assumed +5%). Charged Orb and Thundering use it.
+- **Chain Force**: does the 7th Basic cast deal +100% damage (AFK Meta) or apply Vulnerable (wikily.gg)?
+- **Chi Expenditure**: damage per extra mana spent, to model it.
+
+### Hunter
+
+- **Rapid Fire**: arrows per 2 s channel (assumed 10).
+- **Arcane Arrowstorm**: hits per cast on one enemy (assumed 6).
+- **Arcane Corrosion**: confirm the 150% / 350% detonation on Arcane Bomb or Multishot, to model it.
+- **Improved Steady Shot**: damage per pierced enemy, to model it in AoE.
+
+### Sorcerer
+
+- **Burn**: damage of one tick (Burn lasts 3 s and ticks every 0.5 s; assumed 20% weapon damage per second).
+- **Frost Beam**: ticks per 3 s channel (assumed 6).
+- **Ice Meteor**: ticks during the 3 s field (assumed 6).
+- **Fire Elemental**: how long it stays and how many fireballs it shoots (assumed 10).
+- **Ice Block**: damage of the shatter when it ends.
+- **Electrostatic**: same as Monk (Static Charge, Current Transfer).
+
+### Warrior
+
+- **Whirlwind**: hits on one enemy during the 4 s channel (assumed 8).
+- **Hemorrhage, Ironward, Deepening Wounds**: their effects aren't modeled yet; a short fight log with them would help.
